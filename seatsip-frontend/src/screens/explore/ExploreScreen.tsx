@@ -1,179 +1,308 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TextInput,
-  TouchableOpacity, StatusBar, ActivityIndicator,
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  StyleSheet,
+  SafeAreaView,
+  StatusBar,
+  Image,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { cafesApi } from '../../services/api';
-import { Cafe } from '../../types';
 import { RootStackParamList } from '../../navigation/types';
-import { Colors, Typography, Spacing, Radius, Shadow } from '../../theme';
-import { CafeCard } from '../../components/cards/CafeCard';
-import { EmptyState } from '../../components/ui';
+import AppIcon from '../../components/ui/AppIcon';
+
+const MENU_CARDS = [
+  {
+    id: '1',
+    title: 'Main Menu',
+    description: 'A wide variety of meals to satisfy every craving.',
+    time: '48 mins',
+    timeColor: '#2D6A4F',
+    timeBg: '#D8F3DC',
+    image: 'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=800&q=80',
+  },
+  {
+    id: '2',
+    title: 'Express Menu',
+    description: 'Quick bites and favorites, delivered in no time.',
+    time: '2 hrs',
+    timeColor: '#7B4F00',
+    timeBg: '#FFE8A3',
+    image: 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=800&q=80',
+  },
+  {
+    id: '3',
+    title: 'Custom Cakes',
+    description: 'Beautiful, delicious cakes made just for you.',
+    time: '72 hrs',
+    timeColor: '#4A1A7A',
+    timeBg: '#E0C3FC',
+    image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=800&q=80',
+  },
+  {
+    id: '4',
+    title: 'Hot Pies',
+    description: 'Warm, crispy & packed with flavor. Perfect anytime!',
+    time: '3 hrs',
+    timeColor: '#7A1A00',
+    timeBg: '#FFD6CC',
+    image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800&q=80',
+  },
+];
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-const SORT_OPTIONS = [
-  { id: 'rating', label: '⭐ Rating' },
-  { id: 'name', label: '🔤 Name' },
-  { id: 'price', label: '💰 Price' },
-];
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
-const MOOD_FILTERS = [
-  { id: '', label: 'All' },
-  { id: 'work', label: '💻 Work' },
-  { id: 'date', label: '💕 Date' },
-  { id: 'chill', label: '😌 Chill' },
-  { id: 'art', label: '🎨 Art' },
-  { id: 'rooftop', label: '🌆 Rooftop' },
-  { id: 'breakfast', label: '🍳 Breakfast' },
-];
+const MenuCard = ({ item, onPress }: { item: any, onPress: () => void }) => (
+  <TouchableOpacity style={styles.card} activeOpacity={0.9} onPress={onPress}>
+    <Image
+      source={{ uri: item.image }}
+      style={styles.cardImage}
+      resizeMode="cover"
+    />
+    <View style={styles.cardOverlay} />
+
+    <View style={[styles.timeBadge, { backgroundColor: item.timeBg }]}>
+      <AppIcon name="time" size={12} color={item.timeColor} />
+      <Text style={[styles.timeText, { color: item.timeColor }]}>{item.time}</Text>
+    </View>
+
+    <View style={styles.cardContent}>
+      <Text style={styles.cardTitle}>{item.title}</Text>
+      <Text style={styles.cardDesc}>{item.description}</Text>
+      <View style={styles.arrowBtn}>
+        <AppIcon name="→" size={18} color="#FFFFFF" />
+      </View>
+    </View>
+  </TouchableOpacity>
+);
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function ExploreScreen() {
   const navigation = useNavigation<Nav>();
-  const insets = useSafeAreaInsets();
-  const [query, setQuery] = useState('');
-  const [cafes, setCafes] = useState<Cafe[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [sort, setSort] = useState('rating');
-  const [mood, setMood] = useState('');
-  const [total, setTotal] = useState(0);
+  const [searchText, setSearchText] = useState('');
 
-  const search = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await cafesApi.list({
-        search: query || undefined,
-        mood: mood || undefined,
-        sort,
-        limit: 30,
-      });
-      setCafes(data.data);
-      setTotal(data.meta.total);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  }, [query, mood, sort]);
-
-  useEffect(() => {
-    const t = setTimeout(search, 400);
-    return () => clearTimeout(t);
-  }, [search]);
+  const handleCardPress = (title: string) => {
+    navigation.navigate('Menu', { 
+      cafeId: title.toLowerCase().replace(' ', '_'), 
+      cafeName: title 
+    });
+  };
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" />
 
-      <View style={styles.headerArea}>
-        <Text style={styles.title}>Explore Cafés</Text>
-        <View style={styles.searchRow}>
-          <Text style={styles.searchIcon}>🔍</Text>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Header ── */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.headerTitle}>Explore</Text>
+            <Text style={styles.headerSub}>Discover delicious food, delivered fast</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.bellBtn} 
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate('NotificationsScreen')}
+          >
+            <AppIcon name="notification" size={18} color="#1A1A1A" />
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Search Bar ── */}
+        <View style={styles.searchBar}>
+          <AppIcon name="search" size={16} color="#888" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search by name, area…"
-            placeholderTextColor={Colors.textMuted}
-            returnKeyType="search"
+            placeholder="Search the full catalog"
+            placeholderTextColor="#AAAAAA"
+            value={searchText}
+            onChangeText={setSearchText}
           />
-          {query.length > 0 && (
-            <TouchableOpacity onPress={() => setQuery('')}>
-              <Text style={styles.clearBtn}>✕</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity>
+            <AppIcon name="filter" size={18} color="#555" />
+          </TouchableOpacity>
         </View>
 
-        {/* Mood filter chips */}
-        <FlatList
-          data={MOOD_FILTERS}
-          keyExtractor={i => i.id}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              onPress={() => setMood(item.id)}
-              style={[styles.chip, mood === item.id && styles.chipActive]}
-            >
-              <Text style={[styles.chipText, mood === item.id && styles.chipTextActive]}>{item.label}</Text>
-            </TouchableOpacity>
-          )}
-        />
-
-        {/* Sort */}
-        <View style={styles.sortRow}>
-          <Text style={styles.sortLabel}>Sort:</Text>
-          {SORT_OPTIONS.map(o => (
-            <TouchableOpacity
-              key={o.id}
-              onPress={() => setSort(o.id)}
-              style={[styles.sortBtn, sort === o.id && styles.sortBtnActive]}
-            >
-              <Text style={[styles.sortText, sort === o.id && styles.sortTextActive]}>{o.label}</Text>
-            </TouchableOpacity>
+        {/* ── Menu Cards ── */}
+        <View style={styles.cardList}>
+          {MENU_CARDS.map((item) => (
+            <MenuCard 
+              key={item.id} 
+              item={item} 
+              onPress={() => handleCardPress(item.title)}
+            />
           ))}
         </View>
-
-        <Text style={styles.resultCount}>{total} cafés found</Text>
-      </View>
-
-      {loading ? (
-        <ActivityIndicator size="large" color={Colors.accent} style={{ marginTop: 40 }} />
-      ) : cafes.length === 0 ? (
-        <EmptyState emoji="🔍" title="No cafés found" subtitle="Try a different search or mood filter" />
-      ) : (
-        <FlatList
-          data={cafes}
-          keyExtractor={c => c.id}
-          renderItem={({ item }) => (
-            <CafeCard cafe={item} onPress={() => navigation.navigate('CafeDetail', { cafeId: item.id })} />
-          )}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
-    </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
-  headerArea: {
-    paddingHorizontal: Spacing.base, paddingBottom: Spacing.sm,
-    backgroundColor: Colors.background,
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F5F0EB',
   },
-  title: {
-    fontSize: Typography['2xl'], fontWeight: Typography.extrabold,
-    color: Colors.textPrimary, paddingTop: Spacing.md, marginBottom: Spacing.md,
+  scrollView: {
+    flex: 1,
   },
-  searchRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: Colors.surface, borderRadius: Radius.xl,
-    paddingHorizontal: Spacing.base, height: 50,
-    marginBottom: Spacing.md, ...Shadow.sm,
+  scrollContent: {
+    paddingBottom: 100,
   },
-  searchIcon: { fontSize: 18 },
-  searchInput: { flex: 1, fontSize: Typography.base, color: Colors.textPrimary },
-  clearBtn: { fontSize: 16, color: Colors.textMuted, padding: 4 },
-  chip: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: Radius.full,
-    borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.surface,
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
   },
-  chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  chipText: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
-  chipTextActive: { color: Colors.white },
-  sortRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: Spacing.sm },
-  sortLabel: { fontSize: Typography.sm, color: Colors.textMuted },
-  sortBtn: {
-    paddingHorizontal: 12, paddingVertical: 5, borderRadius: Radius.full,
-    backgroundColor: Colors.surfaceElevated,
+  headerTitle: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: '#1A1A1A',
+    letterSpacing: -0.5,
   },
-  sortBtnActive: { backgroundColor: Colors.accent },
-  sortText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.medium },
-  sortTextActive: { color: Colors.white },
-  resultCount: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 8, marginBottom: 4 },
+  headerSub: {
+    fontSize: 14,
+    color: '#888888',
+    marginTop: 2,
+  },
+  bellBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    marginTop: 4,
+  },
+  bellIcon: {
+    fontSize: 18,
+  },
+
+  // Search
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
+    marginBottom: 24,
+    borderRadius: 50,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1A1A1A',
+  },
+  filterIcon: {
+    fontSize: 18,
+    color: '#555',
+  },
+
+  // Cards
+  cardList: {
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  card: {
+    width: '100%',
+    height: 220,
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 12,
+    position: 'relative',
+  },
+  cardImage: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+  },
+  cardOverlay: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(0,0,0,0.38)',
+  },
+  timeBadge: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 50,
+    gap: 4,
+  },
+  timeClock: {
+    fontSize: 12,
+  },
+  timeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cardContent: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    right: 16,
+  },
+  cardTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  cardDesc: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.85)',
+    lineHeight: 18,
+    marginBottom: 12,
+    maxWidth: '60%',
+  },
+  arrowBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  arrowText: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
 });

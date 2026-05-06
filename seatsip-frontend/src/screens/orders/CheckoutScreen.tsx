@@ -11,19 +11,20 @@ import { ordersApi } from '../../services/api';
 import { RootStackParamList } from '../../navigation/types';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../theme';
 import { Button, Divider } from '../../components/ui';
+import AppIcon from '../../components/ui/AppIcon';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 const ORDER_TYPES = [
-  { id: 'DINE_IN', label: '🪑 Dine In' },
-  { id: 'TAKEOUT', label: '🥡 Takeout' },
-  { id: 'DELIVERY', label: '🚚 Delivery' },
+  { id: 'DINE_IN', label: 'Dine In', icon: '🪑' },
+  { id: 'TAKEOUT', label: 'Takeout', icon: '🥡' },
+  { id: 'DELIVERY', label: 'Delivery', icon: '🚚' },
 ];
 
 const PAYMENT_METHODS = [
-  { id: 'WALLET', label: '👛 Wallet' },
-  { id: 'UPI', label: '📱 UPI' },
-  { id: 'CARD', label: '💳 Card' },
+  { id: 'WALLET', label: 'Wallet', icon: '👛' },
+  { id: 'UPI', label: 'UPI', icon: '📱' },
+  { id: 'CARD', label: 'Card', icon: '💳' },
 ];
 
 export default function CheckoutScreen() {
@@ -80,7 +81,7 @@ export default function CheckoutScreen() {
       <StatusBar barStyle="dark-content" />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}><Text style={styles.backIcon}>←</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.goBack()}><AppIcon name="back" size={22} color={Colors.textPrimary} /></TouchableOpacity>
         <Text style={styles.title}>Checkout</Text>
         <View style={{ width: 32 }} />
       </View>
@@ -95,7 +96,7 @@ export default function CheckoutScreen() {
               onPress={() => setOrderType(o.id)}
               style={[styles.option, orderType === o.id && styles.optionActive]}
             >
-              <Text style={[styles.optionText, orderType === o.id && styles.optionTextActive]}>{o.label}</Text>
+              <View style={styles.optionInner}><AppIcon name={o.icon} size={16} color={orderType === o.id ? Colors.primary : Colors.textSecondary} /><Text style={[styles.optionText, orderType === o.id && styles.optionTextActive]}>{o.label}</Text></View>
             </TouchableOpacity>
           ))}
         </View>
@@ -109,7 +110,7 @@ export default function CheckoutScreen() {
               onPress={() => setPaymentMethod(p.id)}
               style={[styles.option, paymentMethod === p.id && styles.optionActive]}
             >
-              <Text style={[styles.optionText, paymentMethod === p.id && styles.optionTextActive]}>{p.label}</Text>
+              <View style={styles.optionInner}><AppIcon name={p.icon} size={16} color={paymentMethod === p.id ? Colors.primary : Colors.textSecondary} /><Text style={[styles.optionText, paymentMethod === p.id && styles.optionTextActive]}>{p.label}</Text></View>
             </TouchableOpacity>
           ))}
         </View>
@@ -173,6 +174,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   optionActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '10' },
+  optionInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   optionText: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
   optionTextActive: { color: Colors.primary, fontWeight: Typography.bold },
   walletInfo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingHorizontal: 4 },

@@ -4,7 +4,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../theme';
-import { Button, EmptyState } from '../components/ui';
+import { AppIcon, Button, EmptyState } from '../components/ui';
 
 type Nav = NativeStackNavigationProp<any>;
 
@@ -17,7 +17,7 @@ export default function PlaceholderScreen({ name }: { name: string }) {
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backIcon}>←</Text>
+          <AppIcon name="back" size={22} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.title}>{name}</Text>
         <View style={{ width: 40 }} />
@@ -42,7 +42,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface, ...Shadow.sm,
   },
   backBtn: { padding: 4 },
-  backIcon: { fontSize: 22, color: Colors.textPrimary },
   title: { fontSize: Typography.lg, fontWeight: Typography.bold, color: Colors.textPrimary },
   content: { flex: 1 },
 });

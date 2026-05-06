@@ -10,6 +10,7 @@ interface CartContextType {
   addToCart: (cafe_id: string, menu_item_id: string, quantity?: number) => Promise<void>;
   updateQuantity: (id: string, quantity: number) => Promise<void>;
   clearCart: () => Promise<void>;
+  removeFromCart: (id: string) => Promise<void>;
 }
 
 const CartContext = createContext<CartContextType>({} as CartContextType);
@@ -45,10 +46,15 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCart(null);
   }, []);
 
+  const removeFromCart = useCallback(async (id: string) => {
+    await cartApi.update(id, 0);
+    await fetchCart();
+  }, [fetchCart]);
+
   const cartCount = cart?.items.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
 
   return (
-    <CartContext.Provider value={{ cart, cartCount, isLoading, fetchCart, addToCart, updateQuantity, clearCart }}>
+    <CartContext.Provider value={{ cart, cartCount, isLoading, fetchCart, addToCart, updateQuantity, clearCart, removeFromCart }}>
       {children}
     </CartContext.Provider>
   );

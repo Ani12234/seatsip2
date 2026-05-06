@@ -2,7 +2,8 @@ import React from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, Dimensions } from 'react-native';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../theme';
 import { Cafe } from '../../types';
-import { StarRating, PriceLevel, Badge } from '../ui';
+import { StarRating, PriceLevel } from '../ui';
+import AppIcon from '../ui/AppIcon';
 
 const { width } = Dimensions.get('window');
 
@@ -62,9 +63,9 @@ export const CafeCard: React.FC<CafeCardProps> = ({ cafe, onPress, horizontal })
         <StarRating rating={cafe.rating} count={cafe.review_count} />
         <Text style={styles.address} numberOfLines={1}>{cafe.address}</Text>
         <View style={styles.meta_row}>
-          <Text style={styles.meta}>⏱ {cafe.prep_time_minutes} min</Text>
-          {cafe.wifi ? <Text style={styles.meta}>📶 WiFi</Text> : null}
-          {cafe.pet_friendly ? <Text style={styles.meta}>🐾 Pet-friendly</Text> : null}
+          <View style={styles.meta_item}><AppIcon name="time" size={12} color={Colors.textSecondary} /><Text style={styles.meta}>{cafe.prep_time_minutes} min</Text></View>
+          {cafe.wifi ? <View style={styles.meta_item}><AppIcon name="wifi" size={12} color={Colors.textSecondary} /><Text style={styles.meta}>WiFi</Text></View> : null}
+          {cafe.pet_friendly ? <View style={styles.meta_item}><AppIcon name="🐾" size={12} color={Colors.textSecondary} /><Text style={styles.meta}>Pet-friendly</Text></View> : null}
         </View>
       </View>
     </TouchableOpacity>
@@ -123,6 +124,7 @@ const styles = StyleSheet.create({
   name: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textPrimary, flex: 1, marginRight: 8 },
   address: { fontSize: Typography.sm, color: Colors.textMuted, marginTop: 4 },
   meta_row: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  meta_item: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   meta: { fontSize: Typography.xs, color: Colors.textSecondary },
 
   // Horizontal card

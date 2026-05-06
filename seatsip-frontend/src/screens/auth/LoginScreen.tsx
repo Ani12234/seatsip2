@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ScrollView, StatusBar, Alert,
+  KeyboardAvoidingView, Platform, ScrollView, StatusBar, Alert, Image,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -10,6 +10,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../theme';
 import { Button } from '../../components/ui';
 import { GoogleButton } from '../../components/ui/GoogleButton';
+import AppIcon from '../../components/ui/AppIcon';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -43,7 +44,11 @@ export default function LoginScreen() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.logo}>☕ SeatSip</Text>
+          <Image
+            source={require('../../../assets/images/raj.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
           <Text style={styles.tagline}>Your café, your table, your order.</Text>
         </View>
 
@@ -77,7 +82,7 @@ export default function LoginScreen() {
                 secureTextEntry={!showPass}
               />
               <TouchableOpacity onPress={() => setShowPass(p => !p)} style={styles.eyeBtn}>
-                <Text style={styles.eyeIcon}>{showPass ? '🙈' : '👁'}</Text>
+                <AppIcon name={showPass ? 'eye_off' : 'eye'} size={18} color={Colors.textSecondary} />
               </TouchableOpacity>
             </View>
           </View>
@@ -105,8 +110,9 @@ export default function LoginScreen() {
           {/* Demo credentials */}
           <View style={styles.demo}>
             <Text style={styles.demoTitle}>Demo Credentials</Text>
-            <TouchableOpacity onPress={() => { setEmail('arjun@example.com'); setPassword('password123'); }}>
-              <Text style={styles.demoRow}>👤 arjun@example.com · password123</Text>
+            <TouchableOpacity style={styles.demoRowWrap} onPress={() => { setEmail('arjun@example.com'); setPassword('password123'); }}>
+              <AppIcon name="user" size={14} color={Colors.accent} />
+              <Text style={styles.demoRow}>arjun@example.com · password123</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -130,6 +136,7 @@ const styles = StyleSheet.create({
     fontSize: Typography['2xl'], fontWeight: Typography.extrabold,
     color: Colors.primary, letterSpacing: 0.5,
   },
+  logoImage: { width: 200, height: 70, marginBottom: 8 },
   tagline: { fontSize: Typography.sm, color: Colors.textMuted, marginTop: 6 },
   card: {
     backgroundColor: Colors.surface, borderRadius: Radius.xl,
@@ -150,7 +157,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   eyeBtn: { paddingHorizontal: Spacing.md },
-  eyeIcon: { fontSize: 18 },
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: Spacing.lg },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.divider },
   dividerText: { marginHorizontal: 12, fontSize: Typography.sm, color: Colors.textMuted },
@@ -159,6 +165,7 @@ const styles = StyleSheet.create({
     padding: Spacing.md, gap: 6,
   },
   demoTitle: { fontSize: Typography.xs, fontWeight: Typography.semibold, color: Colors.textMuted, marginBottom: 4 },
+  demoRowWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   demoRow: { fontSize: Typography.sm, color: Colors.accent, fontWeight: Typography.medium },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.xl },
   footerText: { fontSize: Typography.base, color: Colors.textSecondary },

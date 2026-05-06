@@ -1,120 +1,231 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   SafeAreaView,
+  Image,
+  Platform,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Search } from 'lucide-react-native';
+import { RootStackParamList } from '../../navigation/types';
 
-const SectionHeader = ({ title }) => (
-  <Text style={styles.sectionHeader}>{title}</Text>
-);
+const MENU_CATEGORIES = [
+  {
+    id: 'main',
+    title: 'Main Menu',
+    subtitle: 'Delivered within\n48 hours',
+    backgroundColor: '#F5A623',
+    image: 'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=300&q=80',
+    route: 'MainMenu',
+  },
+  {
+    id: 'express',
+    title: 'Express Menu',
+    subtitle: 'Delivered within\n2 hours',
+    backgroundColor: '#F5C47A',
+    image: 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=300&q=80',
+    route: 'ExpressMenu',
+  },
+  {
+    id: 'cakes',
+    title: 'Custom Cakes',
+    subtitle: 'Made and delivered\nwithin 72 hours',
+    backgroundColor: '#D4929A',
+    image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=300&q=80',
+    route: 'CustomCakes',
+  },
+  {
+    id: 'pies',
+    title: 'Hot Pies',
+    subtitle: 'Delivered within\n3 hours',
+    backgroundColor: '#C17540',
+    image: 'https://images.unsplash.com/photo-1508737027454-e6454ef45afd?w=300&q=80',
+    route: 'HotPies',
+  },
+  {
+    id: 'local',
+    title: 'Local Delivery',
+    subtitle: 'Made and delivered\nhot within 1 hour',
+    backgroundColor: '#b0aaa2',
+    image: 'https://images.unsplash.com/photo-1482049016688-2d3e1b311543?w=300&q=80',
+    route: 'LocalDelivery',
+    disabled: true,
+  },
+];
 
-const Divider = () => <View style={styles.divider} />;
+type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function SearchScreen() {
-  const [query, setQuery] = useState('');
-  
-  const recentSearches = ['Biryani', 'Fine dining', 'Table for 4', 'Roof top'];
-  const categories = [
-    { icon: '🍽️', name: 'Restaurants' },
-    { icon: '☕', name: 'Cafes' },
-    { icon: '🍕', name: 'Fast Food' },
-    { icon: '🥗', name: 'Healthy' },
-    { icon: '🍰', name: 'Desserts' },
-    { icon: '🍹', name: 'Bars' },
-  ];
-  
-  const trending = [
-    { name: 'Spice Route Kitchen', type: 'Indian • ₹₹₹', rating: '4.6' },
-    { name: 'The Pasta Bowl', type: 'Italian • ₹₹', rating: '4.3' },
-    { name: 'Sushi Central', type: 'Japanese • ₹₹₹₹', rating: '4.8' },
-  ];
+  const navigation = useNavigation<Nav>();
+
+  const handleCategoryPress = (category: typeof MENU_CATEGORIES[0]) => {
+    if (!category.disabled) {
+      // Navigate to the specific menu screen
+      navigation.navigate('Menu', { 
+        cafeId: category.id, 
+        cafeName: category.title 
+      });
+    }
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Text style={styles.pageTitle}>Search</Text>
-      
-      <View style={styles.searchBar}>
-        <Text>🔍</Text>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Restaurants, cuisines, dishes..."
-          value={query}
-          onChangeText={setQuery}
-        />
-        {query.length > 0 && (
-          <TouchableOpacity onPress={() => setQuery('')}>
-            <Text>✕</Text>
-          </TouchableOpacity>
-        )}
+    <View style={styles.backgroundImage}>
+      <SafeAreaView style={styles.container}>
+          {/* Header */}
+          <View style={styles.header}>
+        <Text style={styles.headerTitle}>Explore</Text>
       </View>
-      
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <SectionHeader title="RECENT SEARCHES" />
-        <View style={styles.chipRow}>
-          {recentSearches.map((item, idx) => (
-            <TouchableOpacity key={idx} style={styles.chip}>
-              <Text style={styles.chipText}>🕒 {item}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        
-        <SectionHeader title="BROWSE CATEGORIES" />
-        <View style={styles.categoryGrid}>
-          {categories.map((cat, idx) => (
-            <TouchableOpacity key={idx} style={styles.categoryCard}>
-              <Text style={styles.categoryIcon}>{cat.icon}</Text>
-              <Text style={styles.categoryName}>{cat.name}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        
-        <SectionHeader title="TRENDING NEAR YOU" />
-        {trending.map((item, idx) => (
-          <View key={idx}>
-            <TouchableOpacity style={styles.trendingItem}>
-              <View style={styles.trendingImagePlaceholder}>
-                <Text>🍽️</Text>
-              </View>
-              <View style={styles.trendingInfo}>
-                <Text style={styles.trendingName}>{item.name}</Text>
-                <Text style={styles.trendingMeta}>{item.type}</Text>
-              </View>
-              <View style={styles.ratingBadge}>
-                <Text style={styles.ratingText}>⭐ {item.rating}</Text>
-              </View>
-            </TouchableOpacity>
-            {idx < trending.length - 1 && <Divider />}
-          </View>
+
+      {/* Search Bar */}
+      <TouchableOpacity style={styles.searchBar}>
+        <Search size={16} color="#666" />
+        <Text style={styles.searchText}>Search the full catalog</Text>
+      </TouchableOpacity>
+
+      {/* Menu Categories */}
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {MENU_CATEGORIES.map((category) => (
+          <TouchableOpacity
+            key={category.id}
+            style={[
+              styles.menuCard,
+              category.disabled && styles.disabledCard,
+            ]}
+            onPress={() => handleCategoryPress(category)}
+            activeOpacity={category.disabled ? 1 : 0.8}
+          >
+            {/* Background Image - Full Cover */}
+            <Image
+              source={{ uri: category.image }}
+              style={StyleSheet.absoluteFillObject}
+              resizeMode="cover"
+            />
+            {/* Gradient/Dim Overlay for text readability */}
+            <View style={styles.imageDimOverlay} />
+            {/* Text Content */}
+            <View style={styles.cardOverlay}>
+              <Text style={[
+                styles.cardTitle,
+                category.disabled && styles.disabledText,
+              ]}>
+                {category.title}
+              </Text>
+              <Text style={[
+                styles.cardSubtitle,
+                category.disabled && styles.disabledSubtext,
+              ]}>
+                {category.subtitle}
+              </Text>
+            </View>
+          </TouchableOpacity>
         ))}
       </ScrollView>
     </SafeAreaView>
+  </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9F7F4' },
-  pageTitle: { fontSize: 28, fontWeight: '800', color: '#1A1A1A', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
-  sectionHeader: { fontSize: 12, fontWeight: '700', color: '#9E9E9E', letterSpacing: 1, marginTop: 24, marginBottom: 8, paddingHorizontal: 20 },
-  divider: { height: 1, backgroundColor: '#F0F0F0', marginLeft: 20 },
-  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', marginHorizontal: 20, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 8 },
-  searchInput: { flex: 1, marginLeft: 8, fontSize: 15, color: '#1A1A1A' },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 8 },
-  chip: { backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, borderWidth: 1, borderColor: '#EFEBE6' },
-  chipText: { fontSize: 13, color: '#5D4037', fontWeight: '500' },
-  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 12 },
-  categoryCard: { width: '30%', backgroundColor: '#fff', borderRadius: 16, paddingVertical: 18, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 2 },
-  categoryIcon: { fontSize: 28, marginBottom: 8 },
-  categoryName: { fontSize: 13, fontWeight: '500', color: '#424242' },
-  trendingItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 20 },
-  trendingImagePlaceholder: { width: 50, height: 50, borderRadius: 12, backgroundColor: '#EFEBE6', alignItems: 'center', justifyContent: 'center' },
-  trendingInfo: { flex: 1, marginLeft: 14 },
-  trendingName: { fontSize: 15, fontWeight: '600', color: '#1A1A1A' },
-  trendingMeta: { fontSize: 13, color: '#9E9E9E', marginTop: 2 },
-  ratingBadge: { backgroundColor: '#FFF8E1', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  ratingText: { fontSize: 12, fontWeight: '600', color: '#F57C00' },
+  backgroundImage: {
+    flex: 1,
+  },
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    textAlign: 'center',
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E0D8CC',
+  },
+  searchText: {
+    fontSize: 15,
+    color: '#666',
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+    gap: 12,
+  },
+  menuCard: {
+    height: 140,
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  disabledCard: {
+    opacity: 0.65,
+  },
+  imageDimOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  cardOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    padding: 20,
+    justifyContent: 'center',
+  },
+  cardTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 8,
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  cardSubtitle: {
+    fontSize: 13,
+    color: '#fff',
+    lineHeight: 18,
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  disabledText: {
+    color: 'rgba(255,255,255,0.9)',
+  },
+  disabledSubtext: {
+    color: 'rgba(255,255,255,0.75)',
+  },
 });

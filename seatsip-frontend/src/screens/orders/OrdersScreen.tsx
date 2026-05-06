@@ -13,6 +13,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../theme';
 import { EmptyState } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
+import AppIcon from '../../components/ui/AppIcon';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -48,7 +49,7 @@ export default function OrdersScreen() {
 
   if (!isAuthenticated) {
     return (
-      <View style={[styles.root, { paddingTop: insets.top }]}>
+      <View style={[styles.root, { paddingTop: insets.top, backgroundColor: Colors.background }]}>
         <Text style={styles.headerTitle}>My Orders</Text>
         <EmptyState
           emoji="🔐"
@@ -61,7 +62,7 @@ export default function OrdersScreen() {
   }
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
+    <View style={[styles.root, { paddingTop: insets.top, backgroundColor: Colors.background }]}>
       <StatusBar barStyle="dark-content" />
       <Text style={styles.headerTitle}>My Orders</Text>
 
@@ -89,7 +90,7 @@ export default function OrdersScreen() {
                 <Image source={{ uri: order.cafe_image }} style={styles.cafeImg} resizeMode="cover" />
               ) : (
                 <View style={[styles.cafeImg, { backgroundColor: Colors.accent + '30', alignItems: 'center', justifyContent: 'center' }]}>
-                  <Text style={{ fontSize: 24 }}>☕</Text>
+                  <AppIcon name="coffee" size={24} color={Colors.accent} />
                 </View>
               )}
               <View style={styles.cardInfo}>
@@ -107,7 +108,7 @@ export default function OrdersScreen() {
                 style={styles.trackBtn}
                 onPress={() => navigation.navigate('OrderTracking', { orderId: order.id })}
               >
-                <Text style={styles.trackBtnText}>Track Order →</Text>
+                <View style={styles.trackBtnRow}><Text style={styles.trackBtnText}>Track Order</Text><AppIcon name="→" size={14} color={Colors.accent} /></View>
               </TouchableOpacity>
             )}
           </TouchableOpacity>
@@ -118,7 +119,7 @@ export default function OrdersScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
+  root: { flex: 1 },
   headerTitle: {
     fontSize: Typography['2xl'], fontWeight: Typography.extrabold, color: Colors.textPrimary,
     paddingHorizontal: Spacing.base, paddingTop: Spacing.md, paddingBottom: Spacing.base,
@@ -140,5 +141,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: Colors.divider,
     padding: Spacing.md, alignItems: 'center',
   },
+  trackBtnRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   trackBtnText: { fontSize: Typography.sm, color: Colors.accent, fontWeight: Typography.semibold },
 });

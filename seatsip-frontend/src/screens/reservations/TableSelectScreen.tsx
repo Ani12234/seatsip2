@@ -1,225 +1,521 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  StatusBar, ActivityIndicator,
-} from 'react-native';
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  SafeAreaView,
+  StatusBar,
+  Dimensions,
+  ActivityIndicator,
+} from "react-native";
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { cafesApi } from '../../services/api';
-import { Table } from '../../types';
 import { RootStackParamList } from '../../navigation/types';
-import { Colors, Typography, Spacing, Radius, Shadow } from '../../theme';
-import { Button } from '../../components/ui';
+import { cafesApi } from "../../services/api";
+import AppIcon from '../../components/ui/AppIcon';
 
-type Nav = NativeStackNavigationProp<RootStackParamList>;
+const { width } = Dimensions.get('window');
+
 type Route = RouteProp<RootStackParamList, 'TableSelect'>;
 
-export default function TableSelectScreen() {
-  const navigation = useNavigation<Nav>();
-  const { params } = useRoute<Route>();
-  const insets = useSafeAreaInsets();
+const PARTY_SIZES = [1, 2, 3, 4, 5, 6, 8, 10];
+const TIMES = ["09:00", "11:00", "13:00", "15:00", "17:00", "19:00"];
 
-  const [tables, setTables] = useState<Table[]>([]);
-  const [floors, setFloors] = useState<string[]>([]);
-  const [selectedFloor, setSelectedFloor] = useState('');
-  const [selectedTable, setSelectedTable] = useState<Table | null>(null);
+const SelectTableScreen = () => {
+  const navigation = useNavigation<any>();
+  const route = useRoute<Route>();
+  const cafeId = route.params?.cafeId;
+  const cafeName = route.params?.cafeName || "Dyu Art Café";
+  
   const [partySize, setPartySize] = useState(2);
-  const [date] = useState(new Date().toISOString().split('T')[0]);
-  const [time, setTime] = useState('19:00');
-  const [loading, setLoading] = useState(false);
+  const [time, setTime] = useState("19:00");
+  const [floor, setFloor] = useState("Ground");
+  const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  const [tables, setTables] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const loadTables = async () => {
-    setLoading(true);
+  useEffect(() => {
+    if (cafeId) {
+      fetchTables();
+    }
+  }, [cafeId]);
+
+  const fetchTables = async () => {
     try {
-      const { data } = await cafesApi.getTables(params.cafeId, { date, time, party_size: partySize });
-      setTables(data.data.tables);
-      const fl: string[] = data.data.floors;
-      setFloors(fl);
-      if (fl.length > 0 && !selectedFloor) setSelectedFloor(fl[0]);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+      setLoading(true);
+      const response = await cafesApi.getById(cafeId!);
+      if (response.data.success && response.data.data.tables) {
+        setTables(response.data.data.tables);
+        // Find first available table that fits party size
+        const firstMatch = response.data.data.tables.find((t: any) => t.capacity >= partySize);
+        if (firstMatch) setSelectedTable(firstMatch.id);
+      }
+    } catch (error) {
+      console.error("Error fetching tables:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { loadTables(); }, [date, time, partySize]);
-
-  const filteredTables = tables.filter(t => t.floor === selectedFloor);
-  const TIME_SLOTS = ['09:00', '11:00', '13:00', '15:00', '17:00', '19:00', '20:00', '21:00'];
+  const handleContinue = () => {
+    if (!selectedTable) return;
+    navigation.navigate('ReservationDetails', {
+      cafeId: cafeId,
+      cafeName: cafeName,
+      tableId: selectedTable,
+    });
+  };
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
+    <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
+      
+      {/* Custom Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}><Text style={styles.backIcon}>←</Text></TouchableOpacity>
-        <Text style={styles.title}>Select Table</Text>
-        <View style={{ width: 32 }} />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <AppIcon name="back" size={20} color="#1A1A1A" />
+        </TouchableOpacity>
+        <View style={styles.headerTextContainer}>
+          <Text style={styles.title}>Select Table</Text>
+          <Text style={styles.subtitle}>
+            {cafeName} • Koramangala, Bengaluru
+          </Text>
+        </View>
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: Spacing.base, paddingBottom: 120 }}>
-        {/* Party size */}
-        <Text style={styles.sectionLabel}>Party Size</Text>
-        <View style={styles.partySizeRow}>
-          {[1, 2, 3, 4, 5, 6, 8].map(n => (
-            <TouchableOpacity
-              key={n}
-              onPress={() => { setPartySize(n); setSelectedTable(null); }}
-              style={[styles.sizeBtn, partySize === n && styles.sizeBtnActive]}
-            >
-              <Text style={[styles.sizeBtnText, partySize === n && styles.sizeBtnTextActive]}>{n}</Text>
-            </TouchableOpacity>
-          ))}
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+        {/* Party Size */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Party Size</Text>
+          <Text style={styles.sectionSub}>How many guests?</Text>
+
+          <View style={styles.row}>
+            {PARTY_SIZES.map((item) => (
+              <TouchableOpacity
+                key={item}
+                style={[
+                  styles.circle,
+                  partySize === item && styles.selectedCircle,
+                ]}
+                onPress={() => {
+                  setPartySize(item);
+                  // Reset selected table if it's too small
+                  const currentTable = tables.find(t => t.id === selectedTable);
+                  if (currentTable && currentTable.capacity < item) {
+                    setSelectedTable(null);
+                  }
+                }}
+              >
+                <Text
+                  style={[
+                    styles.circleText,
+                    partySize === item && styles.selectedText,
+                  ]}
+                >
+                  {item}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
-        {/* Time slot */}
-        <Text style={styles.sectionLabel}>Time</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-          {TIME_SLOTS.map(slot => (
-            <TouchableOpacity
-              key={slot}
-              onPress={() => { setTime(slot); setSelectedTable(null); }}
-              style={[styles.timeSlot, time === slot && styles.timeSlotActive]}
-            >
-              <Text style={[styles.timeSlotText, time === slot && styles.timeSlotTextActive]}>{slot}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {/* Date & Time */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Date & Time</Text>
+          <Text style={styles.sectionSub}>Choose your preferred time</Text>
 
-        {/* Floor tabs */}
-        {floors.length > 1 && (
-          <>
-            <Text style={styles.sectionLabel}>Floor</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+            {TIMES.map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[
+                  styles.timeBtn,
+                  time === t && styles.selectedTime,
+                ]}
+                onPress={() => setTime(t)}
+              >
+                <Text
+                  style={[
+                    styles.timeText,
+                    time === t && styles.selectedText,
+                  ]}
+                >
+                  {t}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Floor Selection */}
+        <View style={styles.section}>
+          <View style={styles.rowBetween}>
+            <Text style={styles.sectionTitle}>Select Floor</Text>
             <View style={styles.floorRow}>
-              {floors.map(f => (
+              {["Ground", "First"].map((f) => (
                 <TouchableOpacity
                   key={f}
-                  onPress={() => setSelectedFloor(f)}
-                  style={[styles.floorTab, selectedFloor === f && styles.floorTabActive]}
+                  style={[
+                    styles.floorBtnSmall,
+                    floor === f && styles.selectedFloor,
+                  ]}
+                  onPress={() => setFloor(f)}
                 >
-                  <Text style={[styles.floorTabText, selectedFloor === f && styles.floorTabTextActive]}>{f} Floor</Text>
+                  <Text
+                    style={[
+                      styles.floorTextSmall,
+                      floor === f && styles.selectedText,
+                    ]}
+                  >
+                    {f}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
-          </>
-        )}
-
-        {/* Floor plan */}
-        <Text style={styles.sectionLabel}>Select a Table</Text>
-        {loading ? (
-          <ActivityIndicator color={Colors.accent} style={{ marginTop: 20 }} />
-        ) : (
-          <View style={styles.floorPlan}>
-            {filteredTables.map(table => {
-              const isSelected = selectedTable?.id === table.id;
-              const isUnavailable = !table.is_available;
-              return (
-                <TouchableOpacity
-                  key={table.id}
-                  disabled={isUnavailable}
-                  onPress={() => setSelectedTable(isSelected ? null : table)}
-                  style={[
-                    styles.tableBtn,
-                    isUnavailable && styles.tableBtnUnavailable,
-                    isSelected && styles.tableBtnSelected,
-                  ]}
-                >
-                  <Text style={[styles.tableNum, isSelected && { color: Colors.white }]}>{table.table_number}</Text>
-                  <Text style={[styles.tableCap, isSelected && { color: Colors.cream }]}>👤 {table.capacity}</Text>
-                </TouchableOpacity>
-              );
-            })}
           </View>
-        )}
-
-        {/* Legend */}
-        <View style={styles.legend}>
-          <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: Colors.surface }]} /><Text style={styles.legendText}>Available</Text></View>
-          <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: Colors.accent }]} /><Text style={styles.legendText}>Selected</Text></View>
-          <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: Colors.creamDark }]} /><Text style={styles.legendText}>Booked</Text></View>
         </View>
 
-        {selectedTable && (
-          <View style={styles.selectedInfo}>
-            <Text style={styles.selectedLabel}>Selected: Table {selectedTable.table_number}</Text>
-            <Text style={styles.selectedMeta}>Seats up to {selectedTable.capacity} people</Text>
+        {/* Tables Grid */}
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#8B5E3C" />
+            <Text style={styles.loadingText}>Fetching available tables...</Text>
+          </View>
+        ) : (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Available Tables</Text>
+            <Text style={styles.sectionSub}>Select your preferred spot</Text>
+
+            <View style={styles.tableGrid}>
+              {tables
+                .filter(t => t.floor === floor)
+                .map((item) => {
+                  const isSelected = selectedTable === item.id;
+                  const isDisabled = item.capacity < partySize || item.is_available === 0;
+
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      disabled={isDisabled}
+                      style={[
+                        styles.tableCard,
+                        isSelected && styles.selectedTableCard,
+                        isDisabled && styles.disabledTable,
+                      ]}
+                      onPress={() => setSelectedTable(item.id)}
+                    >
+                      <View style={styles.tableIconContainer}>
+                        <AppIcon name="reservation" size={22} color={isSelected ? '#fff' : '#8B5E3C'} />
+                      </View>
+                      <Text style={[styles.tableId, isSelected && styles.selectedText]}>
+                        Table {item.table_number}
+                      </Text>
+                      <Text style={[styles.tableSeats, isSelected && styles.selectedText]}>
+                        {item.capacity} Seats
+                      </Text>
+                      {isDisabled && (
+                        <View style={styles.statusBadge}>
+                          <Text style={styles.statusText}>
+                            {item.is_available === 0 ? "Booked" : "Small"}
+                          </Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+            </View>
+            
+            {tables.filter(t => t.floor === floor).length === 0 && (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No tables available on this floor.</Text>
+              </View>
+            )}
           </View>
         )}
+        
+        <View style={{ height: 40 }} />
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 8 }]}>
-        <Button
-          title={selectedTable ? `Reserve Table ${selectedTable.table_number} →` : 'Skip Table Selection →'}
-          onPress={() => navigation.navigate('ReservationDetails', {
-            cafeId: params.cafeId,
-            cafeName: params.cafeName,
-            tableId: selectedTable?.id,
-          })}
-          fullWidth
-          size="lg"
-        />
+      {/* Footer CTA */}
+      <View style={styles.footer}>
+        <TouchableOpacity
+          style={[styles.continueBtn, !selectedTable && styles.disabledContinue]}
+          onPress={handleContinue}
+          disabled={!selectedTable}
+        >
+          <Text style={styles.continueText}>Continue to Details</Text>
+        </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
-}
+};
+
+const PRIMARY = "#8B5E3C"; // coffee brown
+const BG = "#F7F5F2";
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
+  safeArea: {
+    flex: 1,
+    backgroundColor: BG,
+  },
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
-    shadowColor: Colors.primary, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3, elevation: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
-  backIcon: { fontSize: 22, color: Colors.textPrimary },
-  title: { fontSize: Typography.lg, fontWeight: Typography.bold, color: Colors.textPrimary },
-  sectionLabel: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary, marginTop: Spacing.base, marginBottom: Spacing.sm },
-  partySizeRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  sizeBtn: {
-    width: 44, height: 44, borderRadius: Radius.full, borderWidth: 1.5,
-    borderColor: Colors.border, backgroundColor: Colors.surface,
-    alignItems: 'center', justifyContent: 'center',
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  sizeBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  sizeBtnText: { fontSize: Typography.sm, fontWeight: Typography.medium, color: Colors.textSecondary },
-  sizeBtnTextActive: { color: Colors.white },
-  timeSlot: {
-    paddingHorizontal: 16, paddingVertical: 10, borderRadius: Radius.md,
-    borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.surface,
+  backIcon: {
+    fontSize: 24,
+    color: '#333',
   },
-  timeSlotActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  timeSlotText: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
-  timeSlotTextActive: { color: Colors.white },
-  floorRow: { flexDirection: 'row', gap: 8 },
-  floorTab: {
-    flex: 1, paddingVertical: 10, borderRadius: Radius.md,
-    borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.surface, alignItems: 'center',
+  headerTextContainer: {
+    flex: 1,
+    alignItems: 'center',
   },
-  floorTabActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  floorTabText: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
-  floorTabTextActive: { color: Colors.white },
-  floorPlan: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  tableBtn: {
-    width: 80, height: 80, borderRadius: Radius.md,
-    backgroundColor: Colors.surface, borderWidth: 2, borderColor: Colors.border,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: Colors.primary, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3, elevation: 2,
+  container: {
+    flex: 1,
+    padding: 20,
   },
-  tableBtnUnavailable: { backgroundColor: Colors.creamDark, borderColor: Colors.creamDark, opacity: 0.5 },
-  tableBtnSelected: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  tableNum: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary },
-  tableCap: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
-  legend: { flexDirection: 'row', gap: 16, marginTop: Spacing.base },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legendDot: { width: 14, height: 14, borderRadius: 4, borderWidth: 1, borderColor: Colors.border },
-  legendText: { fontSize: Typography.xs, color: Colors.textMuted },
-  selectedInfo: {
-    backgroundColor: Colors.accent + '15', borderRadius: Radius.md, padding: Spacing.md,
-    marginTop: Spacing.base, alignItems: 'center',
+
+  title: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: '#1A1A1A',
   },
-  selectedLabel: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.accent },
-  selectedMeta: { fontSize: Typography.sm, color: Colors.textSecondary, marginTop: 4 },
+
+  subtitle: {
+    fontSize: 12,
+    color: "#8E8E93",
+    marginTop: 2,
+  },
+
+  section: {
+    marginBottom: 25,
+  },
+
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: '#1A1A1A',
+  },
+
+  sectionSub: {
+    color: "#8E8E93",
+    fontSize: 13,
+    marginBottom: 12,
+  },
+
+  row: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+
+  circle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#E5E5E7",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: 'white',
+  },
+
+  selectedCircle: {
+    backgroundColor: PRIMARY,
+    borderColor: PRIMARY,
+  },
+
+  circleText: {
+    color: "#333",
+    fontWeight: '600',
+  },
+
+  selectedText: {
+    color: "#fff",
+  },
+
+  timeBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E5E7",
+    backgroundColor: 'white',
+  },
+
+  selectedTime: {
+    backgroundColor: PRIMARY,
+    borderColor: PRIMARY,
+  },
+
+  timeText: {
+    color: "#333",
+    fontWeight: '600',
+  },
+
+  floorRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  floorBtnSmall: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E5E5E7",
+    backgroundColor: 'white',
+  },
+
+  selectedFloor: {
+    backgroundColor: PRIMARY,
+    borderColor: PRIMARY,
+  },
+
+  floorTextSmall: {
+    color: "#333",
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  tableGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -5,
+  },
+
+  tableCard: {
+    width: (width - 60) / 3,
+    margin: 5,
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+
+  selectedTableCard: {
+    backgroundColor: PRIMARY,
+    borderColor: PRIMARY,
+  },
+
+  disabledTable: {
+    backgroundColor: "#F0F0F0",
+    opacity: 0.5,
+  },
+
+  tableIconContainer: {
+    marginBottom: 6,
+  },
+
+  tableIcon: {
+    fontSize: 24,
+  },
+
+  tableId: {
+    fontWeight: "800",
+    fontSize: 13,
+    color: '#1A1A1A',
+  },
+
+  tableSeats: {
+    marginTop: 2,
+    fontSize: 11,
+    color: "#8E8E93",
+    fontWeight: '600',
+  },
+
+  statusBadge: {
+    marginTop: 6,
+    backgroundColor: '#FF3B30',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+
+  statusText: {
+    color: 'white',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+
   footer: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: Colors.surface, padding: Spacing.base,
-    borderTopWidth: 1, borderTopColor: Colors.divider,
+    padding: 20,
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+
+  loadingContainer: {
+    paddingVertical: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  loadingText: {
+    marginTop: 10,
+    color: PRIMARY,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+
+  emptyText: {
+    color: '#999',
+  },
+
+  continueBtn: {
+    backgroundColor: PRIMARY,
+    padding: 18,
+    borderRadius: 16,
+    alignItems: "center",
+    shadowColor: PRIMARY,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+
+  disabledContinue: {
+    backgroundColor: '#D1D1D6',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+
+  continueText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 16,
   },
 });
+
+export default SelectTableScreen;

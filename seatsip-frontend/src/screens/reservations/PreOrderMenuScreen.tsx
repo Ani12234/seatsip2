@@ -10,7 +10,7 @@ import { cafesApi, ordersApi } from '../../services/api';
 import { MenuItem, MenuCategory } from '../../types';
 import { RootStackParamList } from '../../navigation/types';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../theme';
-import { Button, Divider } from '../../components/ui';
+import { AppIcon, Button, Divider } from '../../components/ui';
 import Svg, { Path } from 'react-native-svg';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -102,7 +102,9 @@ export default function PreOrderMenuScreen() {
         <StatusBar barStyle="dark-content" />
         <ScrollView contentContainerStyle={styles.successContent}>
           <View style={styles.successHeader}>
-            <View style={styles.successIcon}><Text style={{ fontSize: 40 }}>✅</Text></View>
+            <View style={styles.successIcon}>
+              <AppIcon name="check" size={42} color={THEME.primary} />
+            </View>
             <Text style={styles.successTitle}>Pre-order Confirmed!</Text>
             <Text style={styles.successSub}>
               Your order will be ready when you arrive at {params.reservationData?.time || '19:00'}. See you soon!
@@ -143,7 +145,8 @@ export default function PreOrderMenuScreen() {
         <StatusBar barStyle="dark-content" />
         <View style={styles.header}>
           <TouchableOpacity onPress={() => setView('menu')} style={styles.backBtn}>
-            <Text style={styles.backBtnTxt}>← Back</Text>
+            <AppIcon name="back" size={14} color={THEME.primary} />
+            <Text style={styles.backBtnTxt}>Back</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Order Summary</Text>
         </View>
@@ -178,8 +181,9 @@ export default function PreOrderMenuScreen() {
           </View>
 
           <View style={styles.infoBanner}>
+            <AppIcon name="card" size={18} color="#5A3E00" />
             <Text style={styles.infoTxt}>
-              💳 Payment will be collected at the venue. Your pre-order helps the café prepare in advance!
+              Payment will be collected at the venue. Your pre-order helps the café prepare in advance!
             </Text>
           </View>
 
@@ -207,7 +211,8 @@ export default function PreOrderMenuScreen() {
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backBtnTxt}>← Back</Text>
+          <AppIcon name="back" size={14} color={THEME.primary} />
+          <Text style={styles.backBtnTxt}>Back</Text>
         </TouchableOpacity>
         <View>
           <Text style={styles.headerTitle}>Pre-order Menu</Text>
@@ -285,7 +290,8 @@ export default function PreOrderMenuScreen() {
                       </View>
                     ) : (
                       <TouchableOpacity onPress={() => updateQty(item, 1)} style={styles.orderNowBtn}>
-                        <Text style={styles.orderNowTxt}>Pre-order ↗</Text>
+                        <Text style={styles.orderNowTxt}>Pre-order</Text>
+                        <AppIcon name="arrow-up-right" size={13} color="#4b5563" />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -312,26 +318,13 @@ export default function PreOrderMenuScreen() {
             <Text style={styles.cartTotalLabel}>₹{cartSubtotal}</Text>
           </View>
           <TouchableOpacity onPress={() => setView('summary')} style={styles.reviewBtn}>
-            <Text style={styles.reviewBtnTxt}>Review Order →</Text>
+            <Text style={styles.reviewBtnTxt}>Review Order</Text>
+            <AppIcon name="arrow" size={15} color={THEME.primary} />
           </TouchableOpacity>
         </View>
       )}
     </View>
   );
-}
-
-function getItemEmoji(name: string) {
-  const n = name.toLowerCase();
-  if (n.includes('coffee') || n.includes('latte')) return '☕';
-  if (n.includes('tea') || n.includes('chai')) return '🍵';
-  if (n.includes('cold') || n.includes('iced')) return '🧊';
-  if (n.includes('juice') || n.includes('lime')) return '🍋';
-  if (n.includes('toast') || n.includes('avocado')) return '🥑';
-  if (n.includes('egg') || n.includes('omelette')) return '🍳';
-  if (n.includes('sandwich')) return '🥪';
-  if (n.includes('brownie') || n.includes('chocolate')) return '🍫';
-  if (n.includes('bread') || n.includes('banana')) return '🍌';
-  return '🍽';
 }
 
 const styles = StyleSheet.create({
@@ -341,7 +334,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', padding: Spacing.base,
     backgroundColor: THEME.surface, gap: 12, borderBottomWidth: 1, borderBottomColor: THEME.border,
   },
-  backBtn: { backgroundColor: '#F0E8D8', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  backBtn: { backgroundColor: '#F0E8D8', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
   backBtnTxt: { fontSize: 13, fontWeight: '600', color: THEME.primary },
   headerTitle: { fontSize: 16, fontWeight: '700', color: '#2C1A00' },
   headerSub: { fontSize: 12, color: THEME.secondary, marginTop: 2 },
@@ -436,6 +429,9 @@ const styles = StyleSheet.create({
   orderNowBtn: {
     paddingVertical: 4,
     paddingHorizontal: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
   },
   orderNowTxt: {
     fontSize: 12,
@@ -481,7 +477,7 @@ const styles = StyleSheet.create({
   },
   cartCountLabel: { fontSize: 12, color: 'rgba(255,243,205,0.7)' },
   cartTotalLabel: { fontSize: 18, fontWeight: '800', color: THEME.highlight },
-  reviewBtn: { backgroundColor: THEME.highlight, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  reviewBtn: { backgroundColor: THEME.highlight, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 5 },
   reviewBtnTxt: { fontSize: 14, fontWeight: '700', color: THEME.primary },
   summaryContent: { padding: Spacing.base },
   summaryList: { marginBottom: 20 },
@@ -502,8 +498,11 @@ const styles = StyleSheet.create({
   infoBanner: {
     backgroundColor: THEME.highlight, borderRadius: 10, padding: 14,
     marginBottom: 24,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
   },
-  infoTxt: { fontSize: 13, color: '#5A3E00', lineHeight: 18 },
+  infoTxt: { flex: 1, fontSize: 13, color: '#5A3E00', lineHeight: 18 },
   successContent: { padding: Spacing.xl, alignItems: 'center' },
   successHeader: { alignItems: 'center', marginBottom: 30 },
   successIcon: {

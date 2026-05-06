@@ -4,6 +4,9 @@ import {
   StyleSheet, ViewStyle, TextStyle, Image,
 } from 'react-native';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../theme';
+import AppIcon from './AppIcon';
+
+export { default as AppIcon } from './AppIcon';
 
 // ===== BUTTON =====
 interface ButtonProps {
@@ -78,9 +81,7 @@ export const StarRating: React.FC<{ rating: number; count?: number; size?: numbe
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
       {stars.map(s => (
-        <Text key={s} style={{ fontSize: size, color: s <= Math.round(rating) ? '#F59E0B' : Colors.border }}>
-          ★
-        </Text>
+        <AppIcon key={s} name="popular" size={size} color={s <= Math.round(rating) ? '#F59E0B' : Colors.border} fill={s <= Math.round(rating) ? '#F59E0B' : 'none'} />
       ))}
       <Text style={{ fontSize: size - 2, color: Colors.textSecondary, marginLeft: 4 }}>
         {rating.toFixed(1)}{count !== undefined ? ` (${count})` : ''}
@@ -131,7 +132,7 @@ export const EmptyState: React.FC<{
   action?: { label: string; onPress: () => void };
 }> = ({ emoji, title, subtitle, action }) => (
   <View style={styles.empty}>
-    <Text style={styles.empty_emoji}>{emoji}</Text>
+    <AppIcon name={emoji} size={56} color={Colors.accent} style={styles.empty_icon} />
     <Text style={styles.empty_title}>{title}</Text>
     {subtitle && <Text style={styles.empty_sub}>{subtitle}</Text>}
     {action && (
@@ -209,7 +210,7 @@ const styles = StyleSheet.create({
 
   // Empty state
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing['2xl'] },
-  empty_emoji: { fontSize: 56, marginBottom: 16 },
+  empty_icon: { marginBottom: 16 },
   empty_title: { fontSize: Typography.xl, fontWeight: Typography.bold, color: Colors.textPrimary, textAlign: 'center' },
   empty_sub: { fontSize: Typography.base, color: Colors.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 22 },
 

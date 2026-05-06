@@ -48,63 +48,92 @@ router.get('/:id', (req: Request, res: Response) => {
 
 // POST /reservations
 router.post('/', (req: Request, res: Response) => {
-  const user = (req as any).user;
-  const { cafe_id, table_id, date, time, party_size, special_requests, pre_order_items = [] } = req.body;
+  try {
+    const user = (req as any).user;
+    const { cafe_id, table_id, date, time, party_size, special_requests, pre_order_items = [] } = req.body;
 
-  if (!cafe_id || !date || !time || !party_size) {
-    return res.status(400).json({ success: false, message: 'cafe_id, date, time, party_size required' });
-  }
-
-  const db = getDb();
-  const cafe = db.prepare('SELECT * FROM cafes WHERE id = ?').get(cafe_id) as any;
-  if (!cafe) return res.status(404).json({ success: false, message: 'Cafe not found' });
-
-  // Check table availability
-  if (table_id) {
-    const conflict = db.prepare(`
-      SELECT id FROM reservations 
-      WHERE cafe_id = ? AND table_id = ? AND date = ? AND time = ? AND status NOT IN ('CANCELLED', 'NO_SHOW')
-    `).get(cafe_id, table_id, date, time);
-    if (conflict) {
-      return res.status(409).json({ success: false, message: 'Table already booked for this time slot' });
+    if (!cafe_id || !date || !time || !party_size) {
+      return res.status(400).json({ success: false, message: 'cafe_id, date, time, party_size required' });
     }
-  }
 
-  // Calculate pre-order total
-  let preOrderTotal = 0;
-  const enrichedPreOrder: any[] = [];
+    const db = getDb();
+    const cafe = db.prepare('SELECT * FROM cafes WHERE id = ?').get(cafe_id) as any;
+    if (!cafe) return res.status(404).json({ success: false, message: 'Cafe not found' });
 
-  for (const item of pre_order_items) {
-    const menuItem = db.prepare('SELECT * FROM menu_items WHERE id = ?').get(item.menu_item_id) as any;
-    if (menuItem) {
-      const lineTotal = menuItem.price * item.quantity;
-      preOrderTotal += lineTotal;
-      enrichedPreOrder.push({ ...menuItem, quantity: item.quantity, line_total: lineTotal });
+    // Check table existence if provided
+    if (table_id) {
+      const table = db.prepare('SELECT * FROM tables WHERE id = ? AND cafe_id = ?').get(table_id, cafe_id);
+      if (!table) return res.status(404).json({ success: false, message: 'Table not found in this cafe' });
+
+      const conflict = db.prepare(`
+        SELECT * FROM reservations 
+        WHERE cafe_id = ? AND table_id = ? AND date = ? AND time = ? AND status NOT IN ('CANCELLED', 'NO_SHOW')
+      `).get(cafe_id, table_id, date, time) as any;
+      
+      if (conflict) {
+        // If it's the SAME user booking the SAME slot, just return the existing reservation
+        // This handles double-clicks or re-tests gracefully
+        if (conflict.user_id === user.userId) {
+          const existingRes = db.prepare(`
+            SELECT r.*, c.name as cafe_name, c.address as cafe_address
+            FROM reservations r JOIN cafes c ON r.cafe_id = c.id WHERE r.id = ?
+          `).get(conflict.id) as any;
+          
+          if (existingRes) {
+            existingRes.pre_order_items = JSON.parse(existingRes.pre_order_items || '[]');
+            return res.status(200).json({ success: true, data: existingRes, message: 'Using existing reservation' });
+          }
+        }
+        return res.status(409).json({ success: false, message: 'Table already booked for this time slot' });
+      }
     }
+
+    // Calculate pre-order total
+    let preOrderTotal = 0;
+    const enrichedPreOrder: any[] = [];
+
+    for (const item of pre_order_items) {
+      const menuItem = db.prepare('SELECT * FROM menu_items WHERE id = ?').get(item.menu_item_id) as any;
+      if (menuItem) {
+        const lineTotal = menuItem.price * item.quantity;
+        preOrderTotal += lineTotal;
+        enrichedPreOrder.push({ ...menuItem, quantity: item.quantity, line_total: lineTotal });
+      }
+    }
+
+    const id = uuidv4();
+    const code = generateConfirmationCode();
+
+    db.prepare(`
+      INSERT INTO reservations (id, user_id, cafe_id, table_id, date, time, party_size, status, special_requests, pre_order_items, pre_order_total, confirmation_code)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?)
+    `).run(id, user.userId, cafe_id, table_id || null, date, time, party_size, special_requests || null, JSON.stringify(enrichedPreOrder), preOrderTotal, code);
+
+    // Notification
+    db.prepare(`INSERT INTO notifications (id, user_id, title, body, type) VALUES (?, ?, ?, ?, 'RESERVATION')`).run(
+      uuidv4(), user.userId,
+      '✅ Table Reserved!',
+      `Your table at ${cafe.name} on ${date} at ${time} is confirmed. Code: ${code}`
+    );
+
+    const reservation = db.prepare(`
+      SELECT r.*, c.name as cafe_name, c.address as cafe_address
+      FROM reservations r JOIN cafes c ON r.cafe_id = c.id WHERE r.id = ?
+    `).get(id) as any;
+    
+    if (reservation) {
+      reservation.pre_order_items = JSON.parse(reservation.pre_order_items || '[]');
+    }
+
+    return res.status(201).json({ success: true, data: reservation });
+  } catch (error: any) {
+    console.error('Reservation Error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error during reservation',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
-
-  const id = uuidv4();
-  const code = generateConfirmationCode();
-
-  db.prepare(`
-    INSERT INTO reservations (id, user_id, cafe_id, table_id, date, time, party_size, status, special_requests, pre_order_items, pre_order_total, confirmation_code)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?)
-  `).run(id, user.userId, cafe_id, table_id || null, date, time, party_size, special_requests || null, JSON.stringify(enrichedPreOrder), preOrderTotal, code);
-
-  // Notification
-  db.prepare(`INSERT INTO notifications (id, user_id, title, body, type) VALUES (?, ?, ?, ?, 'RESERVATION')`).run(
-    uuidv4(), user.userId,
-    '✅ Table Reserved!',
-    `Your table at ${cafe.name} on ${date} at ${time} is confirmed. Code: ${code}`
-  );
-
-  const reservation = db.prepare(`
-    SELECT r.*, c.name as cafe_name, c.address as cafe_address
-    FROM reservations r JOIN cafes c ON r.cafe_id = c.id WHERE r.id = ?
-  `).get(id) as any;
-  reservation.pre_order_items = JSON.parse(reservation.pre_order_items);
-
-  return res.status(201).json({ success: true, data: reservation });
 });
 
 // PATCH /reservations/:id/cancel

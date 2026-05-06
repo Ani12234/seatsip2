@@ -1,19 +1,69 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, Alert, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  StatusBar,
+  Alert,
+  Platform,
+  Image,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { RootStackParamList } from '../../navigation/types';
-import { Colors, Typography, Spacing, Radius, Shadow } from '../../theme';
-import { Divider, Button } from '../../components/ui';
+import AppIcon from '../../components/ui/AppIcon';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const BROWN = '#2C1A0E';
+const ACCENT = '#8B5E3C';
+const BG = '#F5F0EB';
+
+const ACTIVITY_ITEMS = [
+  { id: '1', icon: '📋', label: 'My Orders',     sub: 'View your past orders', route: 'OrderHistory' },
+  { id: '2', icon: '🪑', label: 'Reservations',  sub: 'View your table reservations', route: 'ReservationHistory' },
+];
+
+const PREFERENCE_ITEMS = [
+  { id: '1', icon: '🔔', label: 'Notifications',      sub: 'Manage your notifications',     iconBg: '#E8F5E9', iconColor: '#2E7D32', route: 'NotificationsScreen' },
+  { id: '2', icon: '💳', label: 'Payments & Wallet',  sub: 'Manage cards and balance',       iconBg: '#E8F5E9', iconColor: '#2E7D32', route: 'WalletScreen' },
+  { id: '3', icon: '⚙️', label: 'Settings',           sub: 'App settings and preferences',   iconBg: '#E8F5E9', iconColor: '#2E7D32', route: 'Settings' },
+];
+
+const SUPPORT_ITEMS = [
+  { id: '1', icon: '❓', label: 'Help Center',        sub: 'Get help and support',  iconBg: '#EDE7F6', iconColor: '#4527A0', route: 'HelpCenter' },
+  { id: '2', icon: '📄', label: 'Terms & Conditions', sub: 'Read our policies',     iconBg: '#EDE7F6', iconColor: '#4527A0', route: 'Terms' },
+];
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
+// ─── Menu Row ─────────────────────────────────────────────────────────────────
+const MenuRow = ({ item, isLast, iconBg, onPress }: { item: any, isLast: boolean, iconBg?: string, onPress: () => void }) => (
+  <TouchableOpacity
+    style={[styles.menuRow, !isLast && styles.menuRowBorder]}
+    activeOpacity={0.7}
+    onPress={onPress}
+  >
+    <View style={[styles.menuIconBox, { backgroundColor: iconBg || '#F5EDE6' }]}>
+      <AppIcon name={item.icon} size={20} color={item.iconColor || ACCENT} />
+    </View>
+    <View style={styles.menuInfo}>
+      <Text style={styles.menuLabel}>{item.label}</Text>
+      <Text style={styles.menuSub}>{item.sub}</Text>
+    </View>
+    <AppIcon name="›" size={22} color="#CCCCCC" />
+  </TouchableOpacity>
+);
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const navigation = useNavigation<Nav>();
-  const insets = useSafeAreaInsets();
-  const { user, logout, isAuthenticated } = useAuth();
+  const { user, logout } = useAuth();
+  const avatarUri = user?.avatar;
+  const avatarInitial = (user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase();
 
   const handleLogout = () => {
     const performLogout = async () => {
@@ -34,134 +84,370 @@ export default function ProfileScreen() {
     }
   };
 
-  if (!isAuthenticated) {
-    return (
-      <View style={[styles.root, { paddingTop: insets.top }]}>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <View style={styles.guestContainer}>
-          <Text style={styles.guestEmoji}>👤</Text>
-          <Text style={styles.guestTitle}>Welcome to SeatSip</Text>
-          <Text style={styles.guestSub}>Sign in to manage your profile, orders, and wallet.</Text>
-          <Button title="Sign In" onPress={() => navigation.navigate('Login')} fullWidth size="lg" />
-          <Button title="Create Account" onPress={() => navigation.navigate('Register')} variant="outline" fullWidth size="lg" style={{ marginTop: 12 }} />
-        </View>
-      </View>
-    );
-  }
-
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-        <Text style={styles.headerTitle}>Profile</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={BG} />
 
-        {/* User Card */}
+      {/* Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerTitle}>Profile</Text>
+          <Text style={styles.headerSub}>Manage your account and preferences</Text>
+        </View>
+        <TouchableOpacity 
+          style={styles.settingsBtn} 
+          activeOpacity={0.75}
+          onPress={() => navigation.navigate('Settings')}
+        >
+          <AppIcon name="settings" size={20} color="#1A1A1A" />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── User Card ── */}
         <View style={styles.userCard}>
+          {/* Avatar */}
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{user?.name?.[0] || 'U'}</Text>
+            {avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+            ) : (
+              <Text style={styles.avatarLetter}>{avatarInitial}</Text>
+            )}
           </View>
+
           <View style={styles.userInfo}>
-            <Text style={styles.userName}>{user?.name}</Text>
+            <View style={styles.userNameRow}>
+              <Text style={styles.userName}>{user?.name}</Text>
+              <View style={styles.goldBadge}>
+                <AppIcon name="points" size={11} color="#B8860B" fill="#B8860B" />
+                <Text style={styles.goldText}>Gold Member</Text>
+              </View>
+            </View>
             <Text style={styles.userEmail}>{user?.email}</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('EditProfile')}>
-              <Text style={styles.editLink}>Edit Profile →</Text>
+            <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('EditProfile')} style={styles.editProfileRow}>
+              <Text style={styles.editProfile}>Edit Profile</Text>
+              <AppIcon name="arrow" size={14} color={ACCENT} />
             </TouchableOpacity>
           </View>
+
+          <AppIcon name="›" size={22} color="#CCCCCC" />
         </View>
 
-        {/* Stats Row */}
-        <View style={styles.statsRow}>
-          <TouchableOpacity style={styles.statBox} onPress={() => navigation.navigate('WalletScreen')}>
-            <Text style={styles.statVal}>₹{user?.wallet_balance?.toFixed(0) || '0'}</Text>
-            <Text style={styles.statLabel}>Wallet</Text>
-          </TouchableOpacity>
-          <View style={styles.statDivider} />
-          <TouchableOpacity style={styles.statBox}>
-            <Text style={styles.statVal}>{user?.loyalty_points || '0'}</Text>
-            <Text style={styles.statLabel}>Points</Text>
-          </TouchableOpacity>
+        {/* ── Wallet / Points Banner ── */}
+        <TouchableOpacity 
+          style={styles.walletBanner} 
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('WalletScreen')}
+        >
+          {/* Wallet side */}
+          <View style={styles.walletSide}>
+            <View style={styles.walletIconBox}>
+              <AppIcon name="wallet" size={22} color="#fff" />
+            </View>
+            <View>
+              <Text style={styles.walletAmount}>₹{user?.wallet_balance?.toFixed(0) || '0'}</Text>
+              <Text style={styles.walletLabel}>Wallet Balance</Text>
+            </View>
+          </View>
+
+          {/* Divider */}
+          <View style={styles.bannerDivider} />
+
+          {/* Points side */}
+          <View style={styles.walletSide}>
+            <View style={styles.pointsIconBox}>
+              <AppIcon name="points" size={20} color="#C9A84C" fill="#C9A84C" />
+            </View>
+            <View>
+              <Text style={styles.walletAmount}>{user?.loyalty_points || '0'}</Text>
+              <Text style={styles.walletLabel}>Reward Points</Text>
+            </View>
+          </View>
+
+          <AppIcon name="›" size={22} color="rgba(255,255,255,0.5)" />
+        </TouchableOpacity>
+
+        {/* ── My Activity ── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>MY ACTIVITY</Text>
+          <View style={styles.menuCard}>
+            {ACTIVITY_ITEMS.map((item, index) => (
+              <MenuRow
+                key={item.id}
+                item={item}
+                isLast={index === ACTIVITY_ITEMS.length - 1}
+                iconBg="#F5EDE6"
+                onPress={() => navigation.navigate(item.route as any)}
+              />
+            ))}
+          </View>
         </View>
 
-        {/* Menu Sections */}
-        <View style={styles.menuContainer}>
-          <Text style={styles.menuTitle}>History</Text>
-          <MenuItem icon="📋" label="My Orders" onPress={() => navigation.navigate('OrderHistory')} />
-          <MenuItem icon="🪑" label="Reservations" onPress={() => navigation.navigate('ReservationHistory')} />
-
-          <Text style={[styles.menuTitle, { marginTop: 20 }]}>Preferences</Text>
-          <MenuItem icon="🔔" label="Notifications" onPress={() => navigation.navigate('NotificationsScreen')} />
-          <MenuItem icon="💳" label="Payments & Wallet" onPress={() => navigation.navigate('WalletScreen')} />
-          <MenuItem icon="⚙️" label="Settings" onPress={() => navigation.navigate('Settings')} />
-
-          <Text style={[styles.menuTitle, { marginTop: 20 }]}>Support</Text>
-          <MenuItem icon="💬" label="Help Center" onPress={() => navigation.navigate('HelpCenter' as any)} />
-          <MenuItem icon="📄" label="Terms & Conditions" onPress={() => navigation.navigate('Terms' as any)} />
-
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-            <Text style={styles.logoutText}>Sign Out</Text>
-          </TouchableOpacity>
+        {/* ── Preferences ── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>PREFERENCES</Text>
+          <View style={styles.menuCard}>
+            {PREFERENCE_ITEMS.map((item, index) => (
+              <MenuRow
+                key={item.id}
+                item={item}
+                isLast={index === PREFERENCE_ITEMS.length - 1}
+                iconBg="#E8F5E9"
+                onPress={() => navigation.navigate(item.route as any)}
+              />
+            ))}
+          </View>
         </View>
 
-        <Text style={styles.version}>Version 1.0.0 (Expo)</Text>
+        {/* ── Support ── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>SUPPORT</Text>
+          <View style={styles.menuCard}>
+            {SUPPORT_ITEMS.map((item, index) => (
+              <MenuRow
+                key={item.id}
+                item={item}
+                isLast={index === SUPPORT_ITEMS.length - 1}
+                iconBg="#EDE7F6"
+                onPress={() => navigation.navigate(item.route as any)}
+              />
+            ))}
+          </View>
+        </View>
+
+        {/* ── Sign Out ── */}
+        <TouchableOpacity style={styles.signOutRow} activeOpacity={0.7} onPress={handleLogout}>
+          <AppIcon name="logout" size={20} color="#C62828" />
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
+
+        <View style={{ height: 100 }} />
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
-const MenuItem = ({ icon, label, onPress }: { icon: string; label: string; onPress: () => void }) => (
-  <TouchableOpacity style={styles.menuItem} onPress={onPress}>
-    <View style={styles.menuLeft}>
-      <Text style={styles.menuIcon}>{icon}</Text>
-      <Text style={styles.menuLabel}>{label}</Text>
-    </View>
-    <Text style={styles.menuArrow}>→</Text>
-  </TouchableOpacity>
-);
-
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
-  headerTitle: {
-    fontSize: Typography['2xl'], fontWeight: Typography.extrabold, color: Colors.textPrimary,
-    paddingHorizontal: Spacing.base, paddingTop: Spacing.md, paddingBottom: Spacing.base,
+  safeArea: { flex: 1, backgroundColor: BG },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
   },
-  guestContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
-  guestEmoji: { fontSize: 60, marginBottom: 20 },
-  guestTitle: { fontSize: Typography.xl, fontWeight: Typography.bold, color: Colors.textPrimary, marginBottom: 8 },
-  guestSub: { fontSize: Typography.base, color: Colors.textSecondary, textAlign: 'center', marginBottom: 30, lineHeight: 22 },
+  headerTitle: {
+    fontSize: 30,
+    fontWeight: '900',
+    color: '#1A1A1A',
+    letterSpacing: -0.5,
+  },
+  headerSub: { fontSize: 13, color: '#888', marginTop: 2 },
+  settingsBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  settingsIcon: { fontSize: 20 },
+
+  scrollContent: { paddingHorizontal: 20, paddingTop: 4 },
+
+  // User Card
   userCard: {
-    flexDirection: 'row', alignItems: 'center', padding: Spacing.base,
-    marginHorizontal: Spacing.base, backgroundColor: Colors.surface,
-    borderRadius: Radius.xl, ...Shadow.md, gap: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    gap: 14,
   },
   avatar: {
-    width: 70, height: 70, borderRadius: 35,
-    backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#C49A6C',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
   },
-  avatarText: { fontSize: 28, fontWeight: Typography.bold, color: Colors.white },
+  avatarImage: { width: '100%', height: '100%' },
+  avatarLetter: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
   userInfo: { flex: 1 },
-  userName: { fontSize: Typography.lg, fontWeight: Typography.bold, color: Colors.textPrimary },
-  userEmail: { fontSize: Typography.sm, color: Colors.textSecondary, marginTop: 2 },
-  editLink: { fontSize: Typography.sm, color: Colors.accent, fontWeight: Typography.semibold, marginTop: 8 },
-  statsRow: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface,
-    marginHorizontal: Spacing.base, marginTop: Spacing.base, borderRadius: Radius.lg,
-    paddingVertical: Spacing.md, ...Shadow.sm,
+  userNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 3,
   },
-  statBox: { flex: 1, alignItems: 'center' },
-  statDivider: { width: 1, height: 30, backgroundColor: Colors.divider },
-  statVal: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.primary },
-  statLabel: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
-  menuContainer: { paddingHorizontal: Spacing.base, marginTop: 24 },
-  menuTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textMuted, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
-  menuItem: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.divider,
+  userName: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1A1A1A',
   },
-  menuLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  menuIcon: { fontSize: 18 },
-  menuLabel: { fontSize: Typography.base, color: Colors.textPrimary, fontWeight: Typography.medium },
-  menuArrow: { color: Colors.textMuted, fontSize: 18 },
-  logoutBtn: { marginTop: 32, alignItems: 'center', padding: 16 },
-  logoutText: { color: Colors.error, fontWeight: Typography.bold, fontSize: Typography.base },
-  version: { textAlign: 'center', fontSize: Typography.xs, color: Colors.textMuted, marginTop: 20 },
+  goldBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF8E1',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 50,
+    gap: 3,
+  },
+  goldStar: { fontSize: 11 },
+  goldText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B8860B',
+  },
+  userEmail: { fontSize: 13, color: '#888', marginBottom: 5 },
+  editProfileRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  editProfile: { fontSize: 14, fontWeight: '700', color: ACCENT },
+
+  // Wallet Banner
+  walletBanner: {
+    backgroundColor: BROWN,
+    borderRadius: 20,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    shadowColor: BROWN,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  walletSide: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  walletIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  walletIconEmoji: { fontSize: 22 },
+  pointsIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: '#C9A84C',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pointsIconEmoji: { fontSize: 20 },
+  walletAmount: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+  },
+  walletLabel: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 1,
+  },
+  bannerDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    marginHorizontal: 16,
+  },
+
+  // Sections
+  section: { marginBottom: 16 },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#999',
+    letterSpacing: 1.2,
+    marginBottom: 10,
+    marginLeft: 2,
+  },
+  menuCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    gap: 14,
+  },
+  menuRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F2F2F2',
+  },
+  menuIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  menuIcon: { fontSize: 20 },
+  menuInfo: { flex: 1 },
+  menuLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 2,
+  },
+  menuSub: { fontSize: 13, color: '#999' },
+  chevron: { fontSize: 22, color: '#CCCCCC' },
+
+  // Sign out
+  signOutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+  },
+  signOutIcon: { fontSize: 20 },
+  signOutText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#C62828',
+  },
 });

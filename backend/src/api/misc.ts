@@ -32,24 +32,29 @@ cartRouter.post('/add', (req: Request, res: Response) => {
   const { cafe_id, menu_item_id, quantity = 1 } = req.body;
   if (!cafe_id || !menu_item_id) return res.status(400).json({ success: false, message: 'cafe_id and menu_item_id required' });
 
-  const db = getDb();
+  try {
+    const db = getDb();
 
-  // Clear cart if different cafe
-  const existing = db.prepare('SELECT cafe_id FROM cart_items WHERE user_id = ? LIMIT 1').get(user.userId) as any;
-  if (existing && existing.cafe_id !== cafe_id) {
-    db.prepare('DELETE FROM cart_items WHERE user_id = ?').run(user.userId);
+    // Clear cart if different cafe
+    const existing = db.prepare('SELECT cafe_id FROM cart_items WHERE user_id = ? LIMIT 1').get(user.userId) as any;
+    if (existing && existing.cafe_id !== cafe_id) {
+      db.prepare('DELETE FROM cart_items WHERE user_id = ?').run(user.userId);
+    }
+
+    const existingItem = db.prepare('SELECT * FROM cart_items WHERE user_id = ? AND menu_item_id = ?').get(user.userId, menu_item_id) as any;
+    if (existingItem) {
+      db.prepare('UPDATE cart_items SET quantity = quantity + ? WHERE id = ?').run(quantity, existingItem.id);
+    } else {
+      db.prepare('INSERT INTO cart_items (id, user_id, cafe_id, menu_item_id, quantity) VALUES (?, ?, ?, ?, ?)').run(
+        uuidv4(), user.userId, cafe_id, menu_item_id, quantity
+      );
+    }
+
+    return res.json({ success: true, message: 'Added to cart' });
+  } catch (err: any) {
+    console.error('Error adding to cart:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Error adding to cart' });
   }
-
-  const existingItem = db.prepare('SELECT * FROM cart_items WHERE user_id = ? AND menu_item_id = ?').get(user.userId, menu_item_id) as any;
-  if (existingItem) {
-    db.prepare('UPDATE cart_items SET quantity = quantity + ? WHERE id = ?').run(quantity, existingItem.id);
-  } else {
-    db.prepare('INSERT INTO cart_items (id, user_id, cafe_id, menu_item_id, quantity) VALUES (?, ?, ?, ?, ?)').run(
-      uuidv4(), user.userId, cafe_id, menu_item_id, quantity
-    );
-  }
-
-  return res.json({ success: true, message: 'Added to cart' });
 });
 
 cartRouter.patch('/:id', (req: Request, res: Response) => {
@@ -85,9 +90,9 @@ usersRouter.get('/profile', (req: Request, res: Response) => {
 
 usersRouter.patch('/profile', (req: Request, res: Response) => {
   const user = (req as any).user;
-  const { name, phone } = req.body;
+  const { name, phone, avatar } = req.body;
   const db = getDb();
-  db.prepare("UPDATE users SET name = COALESCE(?, name), phone = COALESCE(?, phone), updated_at = datetime('now') WHERE id = ?").run(name, phone, user.userId);
+  db.prepare("UPDATE users SET name = COALESCE(?, name), phone = COALESCE(?, phone), avatar = COALESCE(?, avatar), updated_at = datetime('now') WHERE id = ?").run(name, phone, avatar, user.userId);
   const updated = db.prepare('SELECT id, name, email, phone, role, wallet_balance, loyalty_points, avatar FROM users WHERE id = ?').get(user.userId);
   return res.json({ success: true, data: updated });
 });

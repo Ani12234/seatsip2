@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ScrollView, StatusBar, Alert,
+  KeyboardAvoidingView, Platform, ScrollView, StatusBar, Alert, Image,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -47,7 +47,11 @@ export default function RegisterScreen() {
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <Text style={styles.logo}>☕ SeatSip</Text>
+          <Image
+            source={require('../../../assets/images/raj.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
         </View>
 
         <View style={styles.card}>
@@ -110,6 +114,7 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 1, padding: Spacing.base },
   header: { alignItems: 'center', paddingTop: 60, paddingBottom: 36 },
   logo: { fontSize: Typography['2xl'], fontWeight: Typography.extrabold, color: Colors.primary },
+  logoImage: { width: 200, height: 70, marginBottom: 8 },
   card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, padding: Spacing.xl, ...Shadow.md },
   title: { fontSize: Typography.xl, fontWeight: Typography.bold, color: Colors.textPrimary },
   subtitle: { fontSize: Typography.base, color: Colors.textSecondary, marginTop: 4, marginBottom: Spacing.lg },

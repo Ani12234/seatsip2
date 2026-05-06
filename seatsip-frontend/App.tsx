@@ -19,7 +19,7 @@ import ExploreScreen from './src/screens/explore/ExploreScreen';
 import OrdersScreen from './src/screens/orders/OrdersScreen';
 import ProfileScreen from './src/screens/profile/ProfileScreen';
 import CafeDetailScreen from './src/screens/cafe/CafeDetailScreen';
-import CafeMenuScreen from './src/screens/cafe/CafeMenuScreen';
+import MenuScreen from './src/screens/cafe/MenuScreen';
 import TableSelectScreen from './src/screens/reservations/TableSelectScreen';
 import ReservationDetailsScreen from './src/screens/reservations/ReservationDetailsScreen';
 import BookingConfirmedScreen from './src/screens/reservations/BookingConfirmedScreen';
@@ -27,9 +27,9 @@ import CartScreen from './src/screens/orders/CartScreen';
 import CheckoutScreen from './src/screens/orders/CheckoutScreen';
 import OrderConfirmedScreen from './src/screens/orders/OrderConfirmedScreen';
 import OrderTrackingScreen from './src/screens/orders/OrderTrackingScreen';
-import PreOrderMenuScreen from './src/screens/reservations/PreOrderMenuScreen';
 import MapScreen from './src/screens/explore/MapScreen';
 import SearchScreen from './src/screens/explore/SearchScreen';
+import DiscoverScreen from './src/screens/explore/DiscoverScreen';
 import SettingsScreen from './src/screens/profile/SettingsScreen';
 import RewardsScreen from './src/screens/rewards/RewardsScreen';
 import EditProfileScreen from './src/screens/profile/EditProfileScreen';
@@ -45,47 +45,93 @@ import MenuItemDetailScreen from './src/screens/cafe/MenuItemDetailScreen';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 
+import { TouchableOpacity, Text, View, StyleSheet, Platform, UIManager, LayoutAnimation } from 'react-native';
+import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { Home, Map as MapIcon, Utensils, Gift, User } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AppIcon from './src/components/ui/AppIcon';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const TAB_ICONS: Record<string, { label: string; Icon: any }> = {
+  Home: { label: 'Home', Icon: Home },
+  MapScreen: { label: 'Map', Icon: MapIcon },
+  ExploreTab: { label: 'Explore', Icon: Utensils },
+  Rewards: { label: 'Rewards', Icon: Gift },
+  Profile: { label: 'Profile', Icon: User },
+};
+
+function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={[styles.tabBarContainer, { paddingBottom: insets.bottom || 16 }]}>
+      <View style={styles.tabBarInner}>
+        {state.routes.map((route, index) => {
+          const { options } = descriptors[route.key];
+          const isFocused = state.index === index;
+          const tabData = TAB_ICONS[route.name];
+
+          if (!tabData) return null;
+          const { label, Icon } = tabData;
+
+          const onPress = () => {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
+
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name);
+            }
+          };
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              onPress={onPress}
+              activeOpacity={0.8}
+              style={[
+                styles.tabButton,
+                isFocused ? styles.tabButtonActive : styles.tabButtonInactive,
+              ]}
+            >
+              <Icon
+                size={20}
+                strokeWidth={isFocused ? 2 : 1.5}
+                color={isFocused ? '#2A1A0E' : 'rgba(245, 237, 214, 0.6)'}
+              />
+              {isFocused && (
+                <Text style={styles.tabLabel} numberOfLines={1}>
+                  {label}
+                </Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 function TabNavigator() {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: '#C8382A',
-        tabBarInactiveTintColor: '#999999',
-        tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          borderTopColor: '#ECE6DF',
-          borderTopWidth: 0.5,
-          height: 65,
-          paddingBottom: 10,
-          paddingTop: 10,
-        },
-        tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: '500',
-        },
-        tabBarIcon: ({ focused, color, size }) => {
-          let icon;
-          if (route.name === 'Home') icon = '🏠';
-          else if (route.name === 'MapScreen') icon = '🗺️';
-          else if (route.name === 'SearchTab') icon = '🔍';
-          else if (route.name === 'Profile') icon = '👤';
-          else if (route.name === 'Rewards') icon = '🎁';
-          return <Text style={{ fontSize: 20, color: focused ? '#C8382A' : '#999999' }}>{icon}</Text>;
-        },
-      })}
+      tabBar={(props) => <BottomTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="MapScreen" component={MapScreen} options={{ title: 'Map' }} />
-      <Tab.Screen name="SearchTab" component={SearchScreen} options={{ title: 'Search' }} />
-      <Tab.Screen name="Rewards" component={RewardsScreen} options={{ title: 'Rewards' }} />
+      <Tab.Screen name="MapScreen" component={MapScreen} />
+      <Tab.Screen name="ExploreTab" component={ExploreScreen} />
+      <Tab.Screen name="Rewards" component={RewardsScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
 }
-
-// Minimal text component for tab icons
-import { Text } from 'react-native';
 
 function Navigation() {
   const { user, isLoading } = useAuth();
@@ -93,7 +139,7 @@ function Navigation() {
   if (isLoading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.background }}>
-        <Text style={{ fontSize: 40 }}>☕</Text>
+        <AppIcon name="coffee" size={40} color={Colors.accent} />
       </View>
     );
   }
@@ -110,7 +156,7 @@ function Navigation() {
         <>
           <Stack.Screen name="MainTabs" component={TabNavigator} />
           <Stack.Screen name="CafeDetail" component={CafeDetailScreen} />
-          <Stack.Screen name="CafeMenu" component={CafeMenuScreen} />
+          <Stack.Screen name="Menu" component={MenuScreen} />
           <Stack.Screen name="Cart" component={CartScreen} />
           <Stack.Screen name="Checkout" component={CheckoutScreen} />
           <Stack.Screen name="OrderConfirmed" component={OrderConfirmedScreen} />
@@ -118,8 +164,8 @@ function Navigation() {
           <Stack.Screen name="TableSelect" component={TableSelectScreen} />
           <Stack.Screen name="ReservationDetails" component={ReservationDetailsScreen} />
           <Stack.Screen name="BookingConfirmed" component={BookingConfirmedScreen} />
-          <Stack.Screen name="PreOrderMenu" component={PreOrderMenuScreen} />
           <Stack.Screen name="ProductDetail" component={MenuItemDetailScreen} />
+          <Stack.Screen name="Discover" component={DiscoverScreen} />
           
           {/* Placeholders for other screens */}
           <Stack.Screen name="NotificationsScreen" component={NotificationsScreen} />
@@ -136,8 +182,6 @@ function Navigation() {
   );
 }
 
-import { View } from 'react-native';
-
 export default function App() {
   return (
     <SafeAreaProvider>
@@ -152,3 +196,51 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBarContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    paddingTop: 8,
+  },
+  tabBarInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#2A1A0E',
+    borderRadius: 30,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    width: 340,
+    height: 56,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12 },
+      android: { elevation: 8 },
+      web: { boxShadow: '0 4px 12px rgba(0,0,0,0.15)' },
+    }),
+  },
+  tabButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 30,
+    height: 44,
+  },
+  tabButtonInactive: {
+    flex: 1,
+  },
+  tabButtonActive: {
+    backgroundColor: '#F5EDD6',
+    paddingHorizontal: 14,
+    gap: 6,
+  },
+  tabLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2A1A0E',
+  },
+});

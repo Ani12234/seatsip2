@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FoodMap</title>
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section id="map" aria-label="FoodMap city map"></section>
+
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">F</span>
+          <span>FoodMap</span>
+        </div>
+
+        <div class="controls">
+          <label class="select-wrap">
+            <span>City</span>
+            <select id="citySelect"></select>
+          </label>
+
+          <div class="segments" role="group" aria-label="Category filter">
+            <button class="segment active" data-category="all" type="button">All</button>
+            <button class="segment" data-category="cafe" type="button">Cafes</button>
+            <button class="segment" data-category="restaurant" type="button">Restaurants</button>
+            <button class="segment" data-category="cloud_kitchen" type="button">Cloud</button>
+          </div>
+        </div>
+      </header>
+
+      <aside class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow" id="cityState"></p>
+            <h1 id="cityName">FoodMap</h1>
+          </div>
+          <span id="resultCount" class="count">0</span>
+        </div>
+
+        <div id="restaurantList" class="restaurant-list"></div>
+      </aside>
+
+      <section id="details" class="details" hidden></section>
+    </main>
+
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -12,6 +12,7 @@ interface AuthContextType {
   register: (name: string, email: string, password: string, phone?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  updateStoredUser: (patch: Partial<User>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -87,11 +88,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {}
   }, []);
 
+  const updateStoredUser = useCallback(async (patch: Partial<User>) => {
+    if (!user) return;
+
+    const nextUser = { ...user, ...patch };
+    setUser(nextUser);
+    await AsyncStorage.setItem('user', JSON.stringify(nextUser));
+  }, [user]);
+
   return (
     <AuthContext.Provider value={{
       user, accessToken, isLoading,
       isAuthenticated: !!user,
-      login, register, logout, refreshUser,
+      login, register, logout, refreshUser, updateStoredUser,
     }}>
       {children}
     </AuthContext.Provider>

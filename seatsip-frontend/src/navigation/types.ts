@@ -9,7 +9,7 @@ export type RootStackParamList = {
 
   // Discovery
   CafeDetail: { cafeId: string };
-  CafeMenu: { cafeId: string; cafeName: string };
+  Menu: { cafeId: string; cafeName: string };
   CafeGallery: { cafeId: string; cafeName: string; images: string[] };
 
   // Reservation flow
@@ -34,8 +34,9 @@ export type RootStackParamList = {
   WriteReview: { cafeId: string; cafeName: string; orderId?: string };
   Settings: undefined;
   NotificationsScreen: undefined;
-  SearchTab: undefined;
+  ExploreTab: undefined;
   SearchResults: { query?: string; mood?: string };
+  Discover: undefined;
   HelpCenter: undefined;
   Terms: undefined;
 };
@@ -43,7 +44,7 @@ export type RootStackParamList = {
 export type TabParamList = {
   Home: undefined;
   MapScreen: undefined;
-  SearchTab: undefined;
+  ExploreTab: undefined;
   Profile: undefined;
   Rewards: undefined;
 };

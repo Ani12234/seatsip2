@@ -122,7 +122,7 @@ export const cartApi = {
 // ===== Users =====
 export const usersApi = {
   profile: () => api.get('/users/profile'),
-  updateProfile: (data: { name?: string; phone?: string }) =>
+  updateProfile: (data: { name?: string; phone?: string; avatar?: string }) =>
     api.patch('/users/profile', data),
   topupWallet: (amount: number) =>
     api.post('/users/wallet/topup', { amount }),

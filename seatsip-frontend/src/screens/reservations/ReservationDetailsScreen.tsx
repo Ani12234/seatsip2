@@ -1,29 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, TextInput,
-  TouchableOpacity, StatusBar, Alert,
-} from 'react-native';
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  TextInput,
+  ScrollView,
+  SafeAreaView,
+  StatusBar,
+  Alert,
+} from "react-native";
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { reservationsApi } from '../../services/api';
 import { RootStackParamList } from '../../navigation/types';
-import { Colors, Typography, Spacing, Radius, Shadow } from '../../theme';
-import { Button, Divider } from '../../components/ui';
+import { reservationsApi } from '../../services/api';
+import AppIcon from '../../components/ui/AppIcon';
 
-type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'ReservationDetails'>;
 
-export default function ReservationDetailsScreen() {
-  const navigation = useNavigation<Nav>();
-  const { params } = useRoute<Route>();
-  const insets = useSafeAreaInsets();
+const TIMES = ["09:00", "11:00", "13:00", "15:00", "17:00", "19:00"];
+const PARTY_SIZES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-  const [date, setDate] = useState(getTomorrow());
-  const [time, setTime] = useState('19:00');
-  const [partySize, setPartySize] = useState(2);
-  const [specialRequests, setSpecialRequests] = useState('');
+const ReservationDetailsScreen = () => {
+  const navigation = useNavigation<any>();
+  const route = useRoute<Route>();
+  const { cafeId, cafeName, tableId } = route.params;
+
+  const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Main state
+  const [date, setDate] = useState(getTomorrow());
+  const [time, setTime] = useState("19:00");
+  const [partySize, setPartySize] = useState(2);
+  const [notes, setNotes] = useState("");
 
   function getTomorrow() {
     const d = new Date();
@@ -31,21 +40,46 @@ export default function ReservationDetailsScreen() {
     return d.toISOString().split('T')[0];
   }
 
-  const TIME_SLOTS = ['09:00', '11:00', '13:00', '15:00', '17:00', '19:00', '20:00', '21:00'];
+  function formatDate(dStr: string) {
+    const d = new Date(dStr);
+    return d.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  // Backup (for cancel)
+  const [backup, setBackup] = useState({ time: "19:00", partySize: 2, notes: "" });
+
+  const handleEdit = () => {
+    setBackup({ time, partySize, notes });
+    setIsEditing(true);
+  };
+
+  const handleSave = () => {
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setTime(backup.time);
+    setPartySize(backup.partySize);
+    setNotes(backup.notes);
+    setIsEditing(false);
+  };
 
   const handleConfirm = async () => {
     try {
       setLoading(true);
+      console.log("Sending reservation request...", { cafeId, tableId, date, time });
       const { data } = await reservationsApi.create({
-        cafe_id: params.cafeId,
-        table_id: params.tableId,
-        date,
+        cafe_id: cafeId,
+        table_id: tableId,
+        date: date,
         time,
         party_size: partySize,
-        special_requests: specialRequests || undefined,
+        special_requests: notes || undefined,
       });
+      console.log("Reservation success:", data);
       navigation.replace('BookingConfirmed', { reservation: data.data });
     } catch (err: any) {
+      console.error("Reservation error:", err?.response?.data || err.message);
       Alert.alert('Booking failed', err?.response?.data?.message || 'Please try again.');
     } finally {
       setLoading(false);
@@ -53,132 +87,403 @@ export default function ReservationDetailsScreen() {
   };
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
+    <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
+      
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}><Text style={styles.backIcon}>←</Text></TouchableOpacity>
-        <Text style={styles.title}>Reservation Details</Text>
-        <View style={{ width: 32 }} />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <AppIcon name="back" size={20} color="#1A1A1A" />
+        </TouchableOpacity>
+        <View style={styles.headerTextContainer}>
+          <Text style={styles.title}>Reservation Details</Text>
+          <Text style={styles.subtitle}>{cafeName} • Koramangala, Bengaluru</Text>
+        </View>
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: Spacing.base, paddingBottom: 120 }}>
-        <View style={styles.cafeInfo}>
-          <Text style={styles.cafeName}>{params.cafeName}</Text>
-          {params.tableId && <Text style={styles.tableInfo}>🪑 Table selected</Text>}
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+        {/* Card */}
+        <View style={styles.card}>
+          {/* Date */}
+          <View style={styles.rowBetween}>
+            <View>
+              <Text style={styles.label}>Date</Text>
+              <Text style={styles.value}>{formatDate(date)}</Text>
+            </View>
+
+            {!isEditing && (
+              <TouchableOpacity
+                style={styles.changeBtn}
+                onPress={handleEdit}
+              >
+                <Text style={styles.changeText}>Change</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Time */}
+          <View style={styles.section}>
+            <Text style={styles.label}>Time</Text>
+
+            <View style={styles.row}>
+              {TIMES.map((t) => {
+                const selected = t === time;
+
+                return (
+                  <TouchableOpacity
+                    key={t}
+                    disabled={!isEditing}
+                    onPress={() => setTime(t)}
+                    style={[
+                      styles.timeBtn,
+                      selected && styles.selected,
+                      !isEditing && styles.disabled,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.timeText,
+                        selected && styles.selectedText,
+                      ]}
+                    >
+                      {t}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Party Size */}
+          <View style={styles.section}>
+            <Text style={styles.label}>Party Size</Text>
+
+            <View style={styles.row}>
+              {PARTY_SIZES.map((n) => {
+                const selected = n === partySize;
+
+                return (
+                  <TouchableOpacity
+                    key={n}
+                    disabled={!isEditing}
+                    onPress={() => setPartySize(n)}
+                    style={[
+                      styles.circle,
+                      selected && styles.selected,
+                      !isEditing && styles.disabled,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.circleText,
+                        selected && styles.selectedText,
+                      ]}
+                    >
+                      {n}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Notes */}
+          <View style={styles.section}>
+            <Text style={styles.label}>Special Requests (optional)</Text>
+
+            <TextInput
+              style={[
+                styles.input,
+                !isEditing && styles.disabledInput,
+              ]}
+              placeholder="e.g. Window seat, birthday decoration..."
+              value={notes}
+              onChangeText={setNotes}
+              editable={isEditing}
+              maxLength={120}
+              multiline
+            />
+
+            <Text style={styles.counter}>{notes.length}/120</Text>
+          </View>
+
+          {/* Edit Actions */}
+          {isEditing && (
+            <View style={styles.editActions}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={handleCancel}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.saveBtn}
+                onPress={handleSave}
+              >
+                <Text style={styles.saveText}>Save Changes</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
-        <Divider style={{ marginBottom: Spacing.base }} />
-
-        <Text style={styles.sectionLabel}>Date</Text>
-        <TextInput
-          style={styles.input}
-          value={date}
-          onChangeText={setDate}
-          placeholder="YYYY-MM-DD"
-          placeholderTextColor={Colors.textMuted}
-        />
-
-        <Text style={styles.sectionLabel}>Time</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-          {TIME_SLOTS.map(slot => (
-            <TouchableOpacity
-              key={slot}
-              onPress={() => setTime(slot)}
-              style={[styles.timeSlot, time === slot && styles.timeSlotActive]}
-            >
-              <Text style={[styles.timeSlotText, time === slot && styles.timeSlotTextActive]}>{slot}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        <Text style={styles.sectionLabel}>Party Size</Text>
-        <View style={styles.partySizeRow}>
-          {[1, 2, 3, 4, 5, 6, 8, 10].map(n => (
-            <TouchableOpacity
-              key={n}
-              onPress={() => setPartySize(n)}
-              style={[styles.sizeBtn, partySize === n && styles.sizeBtnActive]}
-            >
-              <Text style={[styles.sizeBtnText, partySize === n && styles.sizeBtnTextActive]}>{n}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <Text style={styles.sectionLabel}>Special Requests (optional)</Text>
-        <TextInput
-          style={[styles.input, styles.textarea]}
-          value={specialRequests}
-          onChangeText={setSpecialRequests}
-          placeholder="e.g. Window seat, birthday decoration, allergies…"
-          placeholderTextColor={Colors.textMuted}
-          multiline
-          numberOfLines={3}
-        />
-
+        {/* Summary */}
         <View style={styles.summary}>
           <Text style={styles.summaryTitle}>Booking Summary</Text>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>📍 Venue</Text><Text style={styles.summaryVal}>{params.cafeName}</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>📅 Date</Text><Text style={styles.summaryVal}>{date}</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>⏰ Time</Text><Text style={styles.summaryVal}>{time}</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>👥 Party</Text><Text style={styles.summaryVal}>{partySize} people</Text></View>
-          {params.tableId && <View style={styles.summaryRow}><Text style={styles.summaryLabel}>🪑 Table</Text><Text style={styles.summaryVal}>Selected</Text></View>}
-        </View>
-      </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 8 }]}>
-        <Button title="Confirm Reservation" onPress={handleConfirm} loading={loading} fullWidth size="lg" />
-      </View>
-    </View>
+          <SummaryRow label="Venue" value={cafeName} />
+          <SummaryRow label="Date" value={date} />
+          <SummaryRow label="Time" value={time} />
+          <SummaryRow label="Party Size" value={`${partySize} people`} />
+          {tableId && <SummaryRow label="Table" value={`Table ID: ${tableId}`} />}
+        </View>
+
+        {/* Confirm Button */}
+        {!isEditing && (
+          <TouchableOpacity 
+            style={[styles.confirmBtn, loading && styles.disabledConfirm]} 
+            onPress={handleConfirm}
+            disabled={loading}
+          >
+            <Text style={styles.confirmText}>
+              {loading ? "Confirming..." : "Confirm Reservation"}
+            </Text>
+          </TouchableOpacity>
+        )}
+        
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </SafeAreaView>
   );
-}
+};
+
+const SummaryRow = ({ label, value }: { label: string, value: string }) => (
+  <View style={styles.summaryRow}>
+    <Text style={styles.summaryLabel}>{label}</Text>
+    <Text style={styles.summaryValue}>{value}</Text>
+  </View>
+);
+
+const PRIMARY = "#8B5E3C";
+const BG = "#F6F3EF";
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
+  safeArea: {
+    flex: 1,
+    backgroundColor: BG,
+  },
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
-    shadowColor: Colors.primary, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3, elevation: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
-  backIcon: { fontSize: 22, color: Colors.textPrimary },
-  title: { fontSize: Typography.lg, fontWeight: Typography.bold, color: Colors.textPrimary },
-  cafeInfo: { marginBottom: Spacing.base },
-  cafeName: { fontSize: Typography.xl, fontWeight: Typography.bold, color: Colors.textPrimary },
-  tableInfo: { fontSize: Typography.sm, color: Colors.accent, marginTop: 4 },
-  sectionLabel: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary, marginTop: Spacing.base, marginBottom: Spacing.sm },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  backIcon: {
+    fontSize: 24,
+    color: '#333',
+  },
+  headerTextContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  container: { flex: 1, padding: 20 },
+
+  title: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: '#1A1A1A',
+  },
+
+  subtitle: {
+    fontSize: 12,
+    color: "#8E8E93",
+    marginTop: 2,
+  },
+
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+
+  rowBetween: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
+  label: { fontWeight: "700", marginBottom: 8, color: '#1A1A1A' },
+
+  value: { fontSize: 16, fontWeight: "600", color: '#333' },
+
+  changeBtn: {
+    borderWidth: 1.5,
+    borderColor: PRIMARY,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+
+  changeText: { color: PRIMARY, fontWeight: '700', fontSize: 13 },
+
+  section: { marginTop: 20 },
+
+  row: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+
+  timeBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E5E5E7",
+    backgroundColor: 'white',
+  },
+
+  selected: {
+    backgroundColor: PRIMARY,
+    borderColor: PRIMARY,
+  },
+
+  selectedText: { color: "#fff", fontWeight: '600' },
+
+  disabled: { opacity: 0.4 },
+
+  timeText: { color: '#333', fontWeight: '500' },
+
+  circle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: "#E5E5E7",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: 'white',
+  },
+
+  circleText: { color: '#333', fontWeight: '500' },
+
   input: {
-    borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md, paddingVertical: 12,
-    fontSize: Typography.base, color: Colors.textPrimary, backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: "#E5E5E7",
+    borderRadius: 12,
+    padding: 12,
+    height: 100,
+    textAlignVertical: "top",
+    color: '#1A1A1A',
+    backgroundColor: '#FAFAFA',
   },
-  textarea: { height: 80, textAlignVertical: 'top' },
-  timeSlot: {
-    paddingHorizontal: 16, paddingVertical: 10, borderRadius: Radius.md,
-    borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.surface,
+
+  disabledInput: {
+    backgroundColor: "#F2F2F2",
+    color: '#999',
   },
-  timeSlotActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  timeSlotText: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
-  timeSlotTextActive: { color: Colors.white },
-  partySizeRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  sizeBtn: {
-    width: 44, height: 44, borderRadius: Radius.full, borderWidth: 1.5,
-    borderColor: Colors.border, backgroundColor: Colors.surface,
-    alignItems: 'center', justifyContent: 'center',
+
+  counter: {
+    textAlign: "right",
+    marginTop: 5,
+    color: "#8E8E93",
+    fontSize: 11,
   },
-  sizeBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  sizeBtnText: { fontSize: Typography.sm, fontWeight: Typography.medium, color: Colors.textSecondary },
-  sizeBtnTextActive: { color: Colors.white },
+
+  editActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 20,
+    alignItems: 'center',
+  },
+
+  cancelBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+
+  cancelText: {
+    color: "#8E8E93",
+    fontWeight: '600',
+  },
+
+  saveBtn: {
+    backgroundColor: PRIMARY,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+  },
+
+  saveText: {
+    color: "#fff",
+    fontWeight: "700",
+  },
+
   summary: {
-    backgroundColor: Colors.surface, borderRadius: Radius.xl, padding: Spacing.base, marginTop: Spacing.lg,
-    shadowColor: Colors.primary, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3, elevation: 2,
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
-  summaryTitle: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary, marginBottom: Spacing.sm },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 },
-  summaryLabel: { fontSize: Typography.sm, color: Colors.textSecondary },
-  summaryVal: { fontSize: Typography.sm, color: Colors.textPrimary, fontWeight: Typography.medium },
-  footer: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: Colors.surface, padding: Spacing.base,
-    borderTopWidth: 1, borderTopColor: Colors.divider,
+
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: '#1A1A1A',
+    marginBottom: 12,
   },
+
+  summaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginVertical: 6,
+  },
+
+  summaryLabel: { color: "#8E8E93", fontSize: 14 },
+
+  summaryValue: { fontWeight: "700", color: '#333', fontSize: 14 },
+
+  confirmBtn: {
+    backgroundColor: PRIMARY,
+    padding: 18,
+    borderRadius: 16,
+    marginTop: 20,
+    alignItems: "center",
+    shadowColor: PRIMARY,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+
+  confirmText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 16,
+  },
+  disabledConfirm: {
+    opacity: 0.7,
+  }
 });
+
+export default ReservationDetailsScreen;

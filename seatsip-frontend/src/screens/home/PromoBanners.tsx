@@ -13,6 +13,7 @@ import {
   Animated,
   Easing,
 } from 'react-native';
+import { AppIcon } from '../../components/ui';
 
 // ─── Shared palette ────────────────────────────────────────────────────────────
 const C = {
@@ -32,7 +33,7 @@ function LogoMark() {
   return (
     <View style={logo.wrap}>
       <View style={logo.cup}>
-        <Text style={logo.cupEmoji}>☕</Text>
+        <AppIcon name="coffee" size={12} color={C.gold} />
       </View>
       <View>
         <Text style={logo.name}>Manual</Text>
@@ -44,7 +45,6 @@ function LogoMark() {
 const logo = StyleSheet.create({
   wrap:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
   cup:      { width: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
-  cupEmoji: { fontSize: 12 },
   name:     { fontSize: 6, color: C.muted2, letterSpacing: 1, textTransform: 'uppercase', lineHeight: 8 },
 });
 
@@ -83,7 +83,7 @@ export function SpecialMenuBanner({ onPress }: { onPress?: () => void }) {
         {/* hex background layers */}
         <View style={b1.hexOuter} />
         <View style={b1.hexInner}>
-          <Text style={b1.cupEmoji}>☕</Text>
+          <AppIcon name="coffee" size={36} color={C.gold} style={b1.cupIcon} />
         </View>
         {/* decorative bean dots */}
         <Text style={[b1.beans, { top: 8, left: 4 }]}>· · ·</Text>
@@ -154,7 +154,7 @@ const b1 = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cupEmoji: { fontSize: 36, transform: [{ rotate: '-30deg' }] },
+  cupIcon: { transform: [{ rotate: '-30deg' }] },
   beans:    { position: 'absolute', fontSize: 9, color: '#3a2510', letterSpacing: 3 },
 
   // Right
@@ -192,9 +192,9 @@ export function OpenTodayBanner({ onPress }: { onPress?: () => void }) {
   return (
     <TouchableOpacity activeOpacity={0.88} onPress={onPress} style={b5.root}>
 
-      {/* Photo area (right half) — emoji as stand-in */}
+      {/* Photo area (right half) */}
       <View style={b5.photoArea}>
-        <Text style={b5.photoEmoji}>☕</Text>
+        <AppIcon name="coffee" size={64} color={C.gold} style={b5.photoIcon} />
         {/* Fade overlay from left */}
         <View style={b5.fade} />
       </View>
@@ -211,11 +211,11 @@ export function OpenTodayBanner({ onPress }: { onPress?: () => void }) {
 
         <View style={b5.contactRow}>
           <View style={b5.contactItem}>
-            <Text style={b5.contactIcon}>📞</Text>
+            <AppIcon name="phone" size={10} color={C.muted2} />
             <Text style={b5.contactTxt}>+91 98765 43210</Text>
           </View>
           <View style={b5.contactItem}>
-            <Text style={b5.contactIcon}>✉</Text>
+            <AppIcon name="email" size={10} color={C.muted2} />
             <Text style={b5.contactTxt}>hello@cafespot.in</Text>
           </View>
         </View>
@@ -246,7 +246,7 @@ const b5 = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  photoEmoji: { fontSize: 64, opacity: 0.7 },
+  photoIcon: { opacity: 0.7 },
   fade: {
     position: 'absolute',
     left: 0,
@@ -286,7 +286,6 @@ const b5 = StyleSheet.create({
 
   contactRow:  { flexDirection: 'row', gap: 16 },
   contactItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  contactIcon: { fontSize: 10, color: C.muted2 },
   contactTxt:  { fontSize: 8, color: C.muted2, letterSpacing: 0.3 },
 });
 
@@ -312,18 +311,24 @@ export function BuyOneGetOneBanner({ onPress }: { onPress?: () => void }) {
       <View style={b2.centerWrap}>
         <View style={b2.centerInner}>
           <Text style={b2.b1g1}>BUY 1{'\n'}GET 1</Text>
-          <Text style={b2.contact}>📞 +91 98765 43210</Text>
-          <Text style={b2.contact}>✉  hello@cafespot.in</Text>
+          <View style={b2.contactLine}>
+            <AppIcon name="phone" size={8} color="#555" />
+            <Text style={b2.contact}>+91 98765 43210</Text>
+          </View>
+          <View style={b2.contactLine}>
+            <AppIcon name="email" size={8} color="#555" />
+            <Text style={b2.contact}>hello@cafespot.in</Text>
+          </View>
         </View>
       </View>
 
       {/* Right — two photo columns */}
       <View style={b2.photoWrap}>
         <View style={[b2.photoCol, { backgroundColor: '#181008' }]}>
-          <Text style={b2.photoEmoji}>☕</Text>
+          <AppIcon name="coffee" size={34} color={C.gold} />
         </View>
         <View style={[b2.photoCol, { backgroundColor: '#100c04' }]}>
-          <Text style={b2.photoEmoji}>🫖</Text>
+          <AppIcon name="tea" size={34} color={C.gold} />
         </View>
       </View>
 
@@ -354,9 +359,9 @@ const b2 = StyleSheet.create({
   centerWrap: { width: '28%', backgroundColor: '#f0ebe0', justifyContent: 'center', padding: 12 },
   centerInner: { gap: 6 },
   b1g1:    { fontSize: 16, fontWeight: '900', color: '#111', lineHeight: 18, letterSpacing: -0.5 },
+  contactLine: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   contact: { fontSize: 7, color: '#555', lineHeight: 12 },
 
   photoWrap: { flex: 1, flexDirection: 'row' },
   photoCol:  { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  photoEmoji:{ fontSize: 34 },
 });

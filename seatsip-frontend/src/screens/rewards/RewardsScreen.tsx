@@ -1,345 +1,461 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Platform,
+  StyleSheet,
+  SafeAreaView,
+  StatusBar,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuth } from '../../context/AuthContext';
+import { useNavigation } from '@react-navigation/native';
+import AppIcon from '../../components/ui/AppIcon';
 
-// ─── Theme ───────────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
+const BROWN = '#2C1A0E';
+const ACCENT = '#8B5E3C';
+const BG = '#F5F0EB';
 
-const T = {
-  bg: '#F5F0EB',
-  surface: '#FDFAF6',
-  primary: '#3D2B1F',
-  accent: '#C8382A',
-  gold: '#C8851A',
-  goldBg: '#FEF0D6',
-  greenBg: '#E8F5E9',
-  greenTxt: '#22863A',
-  border: '#EDE0CC',
-  muted: '#9E9E9E',
-  cream: '#FFF8F0',
-};
+const CURRENT_POINTS = 820;
+const MIN_POINTS = 500;
+const MAX_POINTS = 1500;
+const PROGRESS = (CURRENT_POINTS - MIN_POINTS) / (MAX_POINTS - MIN_POINTS); // 0–1
 
-// ─── Tier Config ─────────────────────────────────────────────────────────────
-
-const TIERS = [
-  { name: 'Bronze', emoji: '🥉', min: 0,    max: 499,  color: '#CD7F32', bg: '#FDF0E8' },
-  { name: 'Silver', emoji: '🥈', min: 500,  max: 1499, color: '#A8A9AD', bg: '#F4F4F4' },
-  { name: 'Gold',   emoji: '🥇', min: 1500, max: 2999, color: '#C8851A', bg: '#FEF0D6' },
-  { name: 'Plat',   emoji: '💎', min: 3000, max: 99999, color: '#6A5ACD', bg: '#EDEBFA' },
+const WAYS_TO_EARN = [
+  { id: '1', icon: '🛒', label: 'Per ₹100 spent',   pts: '+10 pts' },
+  { id: '2', icon: '🪑', label: 'Per Reservation',  pts: '+50 pts' },
+  { id: '3', icon: '⭐', label: 'Write a review',   pts: '+30 pts' },
+  { id: '4', icon: '👥', label: 'Refer a friend',   pts: '+100 pts' },
 ];
 
-function getTier(pts: number) {
-  return TIERS.find(t => pts >= t.min && pts <= t.max) ?? TIERS[0];
-}
-
-function getNextTier(pts: number) {
-  const idx = TIERS.findIndex(t => pts >= t.min && pts <= t.max);
-  return idx < TIERS.length - 1 ? TIERS[idx + 1] : null;
-}
-
-// ─── Mock Data ───────────────────────────────────────────────────────────────
-
-const MOCK_POINTS = 820;
-
-const HISTORY = [
-  { id: '1', desc: 'Order at Dyu Art Café',       pts: +120, date: '24 Apr' },
-  { id: '2', desc: 'Reservation bonus',            pts: +50,  date: '22 Apr' },
-  { id: '3', desc: 'Redeemed – Free Cappuccino',   pts: -200, date: '20 Apr' },
-  { id: '4', desc: 'Order at Third Wave Coffee',   pts: +90,  date: '18 Apr' },
-  { id: '5', desc: 'Birthday bonus 🎂',            pts: +100, date: '15 Apr' },
-  { id: '6', desc: 'Redeemed – 10% off coupon',   pts: -150, date: '10 Apr' },
-];
-
-const VOUCHERS = [
-  { id: 'v1', title: 'Free Cappuccino',   cost: 200, emoji: '☕', desc: 'Valid at any partner café'       },
-  { id: 'v2', title: '₹50 Off Order',     cost: 150, emoji: '🎟', desc: 'Min. order ₹300'                 },
-  { id: 'v3', title: '10% Off Bill',      cost: 300, emoji: '💸', desc: 'Dine-in only'                    },
-  { id: 'v4', title: 'Free Pastry',       cost: 180, emoji: '🥐', desc: 'Paired with any hot beverage'    },
-  { id: 'v5', title: 'Priority Seating',  cost: 100, emoji: '🪑', desc: 'Skip the queue for 1 visit'      },
-];
-
-// ─── Sub-Components ──────────────────────────────────────────────────────────
-
-function TierBadge({ pts }: { pts: number }) {
-  const tier = getTier(pts);
-  const next = getNextTier(pts);
-  const progress = next ? (pts - tier.min) / (next.min - tier.min) : 1;
-
-  return (
-    <View style={[tb.card, { backgroundColor: tier.bg, borderColor: tier.color + '44' }]}>
-      <View style={tb.topRow}>
-        <Text style={tb.emoji}>{tier.emoji}</Text>
-        <View>
-          <Text style={[tb.tierName, { color: tier.color }]}>{tier.name} Member</Text>
-          <Text style={tb.pts}>{pts.toLocaleString()} pts</Text>
-        </View>
-        {next && (
-          <View style={tb.nextWrap}>
-            <Text style={tb.nextLabel}>Next: {next.emoji} {next.name}</Text>
-            <Text style={[tb.nextPts, { color: tier.color }]}>{(next.min - pts)} pts away</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Progress bar */}
-      <View style={tb.barBg}>
-        <View style={[tb.barFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: tier.color }]} />
-      </View>
-      <View style={tb.barLabels}>
-        <Text style={tb.barLabel}>{tier.min}</Text>
-        {next && <Text style={tb.barLabel}>{next.min}</Text>}
-      </View>
+// ─── Coin Badge ───────────────────────────────────────────────────────────────
+const CoinBadge = () => (
+  <View style={styles.coinOuter}>
+    <View style={styles.coinInner}>
+      <AppIcon name="points" size={36} color="#FFFFFF" fill="#FFFFFF" />
+      <Text style={styles.coinTop}>SEATSIP</Text>
+      <Text style={styles.coinBottom}>DIGITAL DETOX CAFE</Text>
     </View>
-  );
-}
+  </View>
+);
 
-const tb = StyleSheet.create({
-  card: { borderRadius: 20, padding: 20, marginHorizontal: 20, marginBottom: 20, borderWidth: 1 },
-  topRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16 },
-  emoji: { fontSize: 40 },
-  tierName: { fontSize: 18, fontWeight: '800' },
-  pts: { fontSize: 13, color: T.muted, marginTop: 2 },
-  nextWrap: { marginLeft: 'auto', alignItems: 'flex-end' },
-  nextLabel: { fontSize: 11, color: T.muted },
-  nextPts: { fontSize: 13, fontWeight: '700', marginTop: 2 },
-  barBg: { height: 8, backgroundColor: 'rgba(0,0,0,0.1)', borderRadius: 4, overflow: 'hidden' },
-  barFill: { height: '100%', borderRadius: 4 },
-  barLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
-  barLabel: { fontSize: 10, color: T.muted },
-});
-
-function VoucherCard({ v, pts, onRedeem }: { v: typeof VOUCHERS[0]; pts: number; onRedeem: (v: typeof VOUCHERS[0]) => void }) {
-  const canAfford = pts >= v.cost;
-  return (
-    <View style={[vc.card, !canAfford && vc.disabled]}>
-      <Text style={vc.emoji}>{v.emoji}</Text>
-      <View style={vc.info}>
-        <Text style={vc.title}>{v.title}</Text>
-        <Text style={vc.desc}>{v.desc}</Text>
-      </View>
-      <View style={vc.right}>
-        <Text style={[vc.cost, { color: canAfford ? T.gold : T.muted }]}>{v.cost} pts</Text>
-        <TouchableOpacity
-          style={[vc.btn, { backgroundColor: canAfford ? T.accent : '#E0D8CC' }]}
-          onPress={() => canAfford && onRedeem(v)}
-          activeOpacity={canAfford ? 0.8 : 1}
-        >
-          <Text style={[vc.btnTxt, { color: canAfford ? '#fff' : T.muted }]}>
-            {canAfford ? 'Redeem' : 'Need more'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+// ─── Earn Row ─────────────────────────────────────────────────────────────────
+const EarnRow = ({ item, isLast }: { item: any, isLast: boolean }) => (
+  <TouchableOpacity
+    style={[styles.earnRow, !isLast && styles.earnRowBorder]}
+    activeOpacity={0.7}
+  >
+    <View style={styles.earnIconBox}>
+      <AppIcon name={item.icon} size={20} color={ACCENT} />
     </View>
-  );
-}
-
-const vc = StyleSheet.create({
-  card: {
-    backgroundColor: T.surface,
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 1,
-    borderColor: T.border,
-    marginBottom: 10,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6 },
-      android: { elevation: 2 },
-      web: { boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
-    }),
-  },
-  disabled: { opacity: 0.6 },
-  emoji: { fontSize: 28, width: 36 },
-  info: { flex: 1 },
-  title: { fontSize: 14, fontWeight: '700', color: T.primary },
-  desc: { fontSize: 11, color: T.muted, marginTop: 2 },
-  right: { alignItems: 'flex-end', gap: 6 },
-  cost: { fontSize: 13, fontWeight: '700' },
-  btn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  btnTxt: { fontSize: 11, fontWeight: '700' },
-});
-
-function HistoryRow({ h }: { h: typeof HISTORY[0] }) {
-  const isEarn = h.pts > 0;
-  return (
-    <View style={hr.row}>
-      <View style={[hr.dot, { backgroundColor: isEarn ? T.greenTxt : T.accent }]} />
-      <View style={hr.middle}>
-        <Text style={hr.desc}>{h.desc}</Text>
-        <Text style={hr.date}>{h.date}</Text>
-      </View>
-      <Text style={[hr.pts, { color: isEarn ? T.greenTxt : T.accent }]}>
-        {isEarn ? '+' : ''}{h.pts}
-      </Text>
+    <View style={styles.earnInfo}>
+      <Text style={styles.earnLabel}>{item.label}</Text>
+      <Text style={styles.earnPts}>{item.pts}</Text>
     </View>
-  );
-}
+    <AppIcon name="›" size={22} color="#CCCCCC" />
+  </TouchableOpacity>
+);
 
-const hr = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: T.border },
-  dot: { width: 10, height: 10, borderRadius: 5 },
-  middle: { flex: 1 },
-  desc: { fontSize: 13, fontWeight: '600', color: T.primary },
-  date: { fontSize: 11, color: T.muted, marginTop: 2 },
-  pts: { fontSize: 15, fontWeight: '800' },
-});
-
-// ─── Main Screen ─────────────────────────────────────────────────────────────
-
-type Tab = 'vouchers' | 'history';
-
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function RewardsScreen() {
-  const insets = useSafeAreaInsets();
-  const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>('vouchers');
-  const [points, setPoints] = useState(MOCK_POINTS);
-  const tier = getTier(points);
-
-  const handleRedeem = (v: typeof VOUCHERS[0]) => {
-    if (points >= v.cost) {
-      setPoints(p => p - v.cost);
-      alert(`🎉 "${v.title}" redeemed! Check your wallet for the coupon.`);
-    }
-  };
+  const navigation = useNavigation();
 
   return (
-    <View style={[s.root, { paddingTop: insets.top }]}>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={BG} />
 
-      {/* ── Header ── */}
-      <View style={s.header}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.backBtn} 
+          activeOpacity={0.75}
+          onPress={() => navigation.goBack()}
+        >
+          <AppIcon name="back" size={20} color="#1A1A1A" />
+        </TouchableOpacity>
         <View>
-          <Text style={s.headerTitle}>☕ SeatSip Rewards</Text>
-          <Text style={s.headerSub}>Earn points with every sip & seat</Text>
-        </View>
-        <View style={[s.pointsPill, { borderColor: tier.color + '66', backgroundColor: tier.bg }]}>
-          <Text style={[s.pointsNum, { color: tier.color }]}>{points}</Text>
-          <Text style={[s.pointsLabel, { color: tier.color }]}>pts</Text>
+          <Text style={styles.headerTitle}>Rewards</Text>
+          <Text style={styles.headerSub}>Earn points & unlock exciting benefits</Text>
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Balance Card ── */}
+        <View style={styles.balanceCard}>
+          {/* Decorative rings */}
+          <View style={styles.ringLarge} />
+          <View style={styles.ringSmall} />
 
-        {/* ── Tier Card ── */}
-        <TierBadge pts={points} />
+          <View style={styles.balanceLeft}>
+            <Text style={styles.balanceLabel}>Your Balance</Text>
+            <Text style={styles.balanceAmount}>{CURRENT_POINTS}</Text>
+            <Text style={styles.balanceUnit}>Points</Text>
+          </View>
 
-        {/* ── How to Earn ── */}
-        <View style={s.earnRow}>
-          {[
-            { emoji: '🛒', pts: '+10', label: 'Per ₹100 spent' },
-            { emoji: '🪑', pts: '+50', label: 'Reservation' },
-            { emoji: '⭐', pts: '+30', label: 'Write review' },
-            { emoji: '👥', pts: '+100', label: 'Refer friend' },
-          ].map(e => (
-            <View key={e.label} style={s.earnCard}>
-              <Text style={s.earnEmoji}>{e.emoji}</Text>
-              <Text style={[s.earnPts, { color: T.gold }]}>{e.pts}</Text>
-              <Text style={s.earnLabel}>{e.label}</Text>
+          <CoinBadge />
+        </View>
+
+        {/* ── Member Tier ── */}
+        <View style={styles.tierCard}>
+          <View style={styles.tierTop}>
+            {/* Silver medal */}
+            <View style={styles.medalWrap}>
+              <View style={styles.medalRibbon}>
+                <View style={[styles.ribbonStripe, { backgroundColor: '#C0392B' }]} />
+                <View style={[styles.ribbonStripe, { backgroundColor: '#FFFFFF' }]} />
+                <View style={[styles.ribbonStripe, { backgroundColor: '#2980B9' }]} />
+              </View>
+              <View style={styles.medal}>
+                <Text style={styles.medalNum}>2</Text>
+              </View>
             </View>
+
+            <Text style={styles.tierName}>Silver Member</Text>
+
+            <View style={styles.tierNext}>
+              <View style={styles.tierNextRow}><Text style={styles.tierNextLabel}>Next:</Text><AppIcon name="trending" size={13} color="#B8860B" /><Text style={styles.tierNextLabel}>Gold</Text></View>
+              <Text style={styles.tierNextPts}>680 pts away</Text>
+            </View>
+          </View>
+
+          {/* Progress bar */}
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${PROGRESS * 100}%` }]} />
+          </View>
+          <View style={styles.progressLabels}>
+            <Text style={styles.progressLabel}>{MIN_POINTS}</Text>
+            <Text style={styles.progressLabel}>{MAX_POINTS}</Text>
+          </View>
+        </View>
+
+        {/* ── Ways to Earn ── */}
+        <Text style={styles.sectionTitle}>Ways to Earn</Text>
+
+        <View style={styles.earnCard}>
+          {WAYS_TO_EARN.map((item, index) => (
+            <EarnRow key={item.id} item={item} isLast={index === WAYS_TO_EARN.length - 1} />
           ))}
         </View>
 
-        {/* ── Tab Bar ── */}
-        <View style={s.tabBar}>
-          {(['vouchers', 'history'] as Tab[]).map(t => (
-            <TouchableOpacity
-              key={t}
-              style={[s.tabBtn, tab === t && s.tabBtnActive]}
-              onPress={() => setTab(t)}
-            >
-              <Text style={[s.tabTxt, tab === t && s.tabTxtActive]}>
-                {t === 'vouchers' ? '🎟 Vouchers' : '📋 History'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* ── CTA Button ── */}
+        <TouchableOpacity style={styles.ctaBtn} activeOpacity={0.85}>
+          <AppIcon name="rewards" size={18} color="#fff" />
+          <Text style={styles.ctaText}>View All Rewards</Text>
+        </TouchableOpacity>
 
-        {/* ── Vouchers ── */}
-        {tab === 'vouchers' && (
-          <View style={s.listWrap}>
-            <Text style={s.sectionNote}>You have <Text style={{ fontWeight: '800', color: T.gold }}>{points} pts</Text> to spend</Text>
-            {VOUCHERS.map(v => (
-              <VoucherCard key={v.id} v={v} pts={points} onRedeem={handleRedeem} />
-            ))}
-          </View>
-        )}
-
-        {/* ── History ── */}
-        {tab === 'history' && (
-          <View style={s.listWrap}>
-            {HISTORY.map(h => <HistoryRow key={h.id} h={h} />)}
-          </View>
-        )}
-
+        <View style={{ height: 24 }} />
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: T.bg },
+// ─── Styles ───────────────────────────────────────────────────────────────────
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: BG,
+  },
+
+  // Header
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: T.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: T.border,
-    marginBottom: 20,
+    paddingTop: 14,
+    paddingBottom: 12,
+    gap: 14,
   },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: T.primary },
-  headerSub: { fontSize: 12, color: T.muted, marginTop: 2 },
-  pointsPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+  backBtn: {
+    width: 42,
+    height: 42,
     borderRadius: 14,
-    borderWidth: 1.5,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  pointsNum: { fontSize: 22, fontWeight: '900', lineHeight: 26 },
-  pointsLabel: { fontSize: 10, fontWeight: '600', letterSpacing: 0.5 },
-
-  // Earn cards
-  earnRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 10, marginBottom: 24 },
-  earnCard: {
-    flex: 1,
-    backgroundColor: T.surface,
-    borderRadius: 14,
-    padding: 12,
-    alignItems: 'center',
-    gap: 4,
-    borderWidth: 1,
-    borderColor: T.border,
+  backIcon: { fontSize: 20, color: '#1A1A1A' },
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#1A1A1A',
+    letterSpacing: -0.3,
   },
-  earnEmoji: { fontSize: 22 },
-  earnPts: { fontSize: 14, fontWeight: '800' },
-  earnLabel: { fontSize: 9, color: T.muted, textAlign: 'center', lineHeight: 13 },
+  headerSub: { fontSize: 13, color: '#888', marginTop: 1 },
 
-  // Tab bar
-  tabBar: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    backgroundColor: '#ECE4D4',
-    borderRadius: 12,
-    padding: 4,
+  scrollContent: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 100 },
+
+  // Balance card
+  balanceCard: {
+    backgroundColor: BROWN,
+    borderRadius: 24,
+    padding: 28,
     marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 180,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  tabBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
-  tabBtnActive: { backgroundColor: '#fff' },
-  tabTxt: { fontSize: 13, fontWeight: '600', color: T.muted },
-  tabTxtActive: { color: T.primary, fontWeight: '800' },
+  ringLarge: {
+    position: 'absolute',
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    borderWidth: 35,
+    borderColor: 'rgba(255,255,255,0.04)',
+    right: -60,
+    bottom: -60,
+  },
+  ringSmall: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    borderWidth: 25,
+    borderColor: 'rgba(255,255,255,0.04)',
+    right: 30,
+    top: -40,
+  },
+  balanceLeft: { flex: 1 },
+  balanceLabel: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.6)',
+    marginBottom: 6,
+  },
+  balanceAmount: {
+    fontSize: 64,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: -2,
+    lineHeight: 70,
+  },
+  balanceUnit: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.75)',
+    marginTop: 2,
+  },
 
-  // Lists
-  listWrap: { paddingHorizontal: 20 },
-  sectionNote: { fontSize: 13, color: T.muted, marginBottom: 12 },
+  // Coin
+  coinOuter: {
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: '#4A2E14',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 4, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 10,
+    borderWidth: 3,
+    borderColor: '#6B3F1A',
+  },
+  coinInner: {
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    backgroundColor: '#3A2010',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#5A3218',
+  },
+  coinStar: {
+    fontSize: 36,
+    color: '#FFFFFF',
+    fontWeight: '900',
+    lineHeight: 40,
+  },
+  coinTop: {
+    position: 'absolute',
+    top: 14,
+    fontSize: 8,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 1.5,
+  },
+  coinBottom: {
+    position: 'absolute',
+    bottom: 14,
+    fontSize: 5.5,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.7)',
+    letterSpacing: 0.5,
+  },
+
+  // Tier card
+  tierCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  tierTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 12,
+  },
+  medalWrap: { alignItems: 'center' },
+  medalRibbon: {
+    flexDirection: 'row',
+    width: 20,
+    height: 12,
+    marginBottom: -4,
+    overflow: 'hidden',
+    borderTopLeftRadius: 2,
+    borderTopRightRadius: 2,
+  },
+  ribbonStripe: { flex: 1, height: '100%' },
+  medal: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#C0C0C0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#A0A0A0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  medalNum: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#555',
+  },
+  tierName: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1A1A1A',
+  },
+  tierNext: { alignItems: 'flex-end' },
+  tierNextRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  tierNextLabel: {
+    fontSize: 13,
+    color: '#888',
+    marginBottom: 2,
+  },
+  tierNextPts: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1A1A1A',
+  },
+  progressTrack: {
+    height: 10,
+    backgroundColor: '#EDEDED',
+    borderRadius: 5,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: BROWN,
+    borderRadius: 5,
+  },
+  progressLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  progressLabel: {
+    fontSize: 12,
+    color: '#999',
+  },
+
+  // Ways to Earn
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1A1A1A',
+    marginBottom: 12,
+  },
+  earnCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  earnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    gap: 14,
+  },
+  earnRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F2F2F2',
+  },
+  earnIconBox: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#F0EAE4',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  earnIcon: { fontSize: 20 },
+  earnInfo: { flex: 1 },
+  earnLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1A1A1A',
+    marginBottom: 2,
+  },
+  earnPts: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: ACCENT,
+  },
+  chevron: {
+    fontSize: 22,
+    color: '#CCCCCC',
+  },
+
+  // CTA
+  ctaBtn: {
+    backgroundColor: BROWN,
+    borderRadius: 50,
+    paddingVertical: 18,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: BROWN,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  ctaIcon: { fontSize: 20 },
+  ctaText: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
 });

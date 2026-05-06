@@ -14,7 +14,11 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.seatsip.app"
+      "bundleIdentifier": "com.seatsip.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "SeatSip uses your location to auto-fill your delivery address.",
+        "NSPhotoLibraryUsageDescription": "SeatSip lets you choose a photo for your profile."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -32,6 +36,12 @@
     "plugins": [
       "expo-font",
       "expo-location",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "SeatSip lets you choose a photo for your profile."
+        }
+      ],
       [
         "expo-notifications",
         {

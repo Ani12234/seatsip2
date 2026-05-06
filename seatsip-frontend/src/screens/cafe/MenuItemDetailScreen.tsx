@@ -1,123 +1,158 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Animated,
+  Dimensions,
   StatusBar,
+  SafeAreaView,
   Alert,
-  Platform,
-  Image,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../../navigation/types';
 import { useCart } from '../../context/CartContext';
+import AppIcon from '../../components/ui/AppIcon';
 
-type Nav = NativeStackNavigationProp<RootStackParamList>;
+const { width } = Dimensions.get('window');
+
+const SIZES = [
+  { id: 'small',   label: 'Small',   ml: 237,  priceOffset: -30, caffeine: 75,  scale: 0.72 },
+  { id: 'regular', label: 'Regular', ml: 355,  priceOffset: 0,   caffeine: 150, scale: 0.88 },
+  { id: 'large',   label: 'Large',   ml: 473,  priceOffset: 50,  caffeine: 225, scale: 1.0  },
+];
+
+const MILKS = [
+  { id: 'whole',  label: 'Whole\nMilk',  icon: '🥛' },
+  { id: 'oat',    label: 'Oat\nMilk',    icon: '🌾' },
+  { id: 'almond', label: 'Almond\nMilk', icon: '🌰' },
+  { id: 'soy',    label: 'Soy\nMilk',    icon: '🫘' },
+];
+
 type Route = RouteProp<RootStackParamList, 'ProductDetail'>;
 
-const THEME = {
-  bg: '#F5F0EB',
-  surface: '#FDFAF6',
-  primary: '#3D2B1F',
-  accent: '#C8382A',
-  gold: '#C8851A',
-  greenBg: '#E8F5E9',
-  greenTxt: '#22863A',
-  tagBg: '#EDE4D4',
-  tagTxt: '#5A3E28',
-  muted: '#9E9E9E',
-  border: '#EDE0CC',
-  cream: '#FFF3CD',
-};
+// Animated coffee cup SVG-style drawn with Views
+const CoffeeCup = ({ scale, quantity }: { scale: number; quantity: number }) => {
+  const scaleAnim = useRef(new Animated.Value(scale)).current;
+  const bounceAnim = useRef(new Animated.Value(1)).current;
 
-const IMG_FALLBACK_MAP: Record<string, string> = {
-  cappuccino:   'https://images.unsplash.com/photo-1572442388796-11668a67e53d?w=800',
-  espresso:     'https://images.unsplash.com/photo-1510707577719-ae7c14805e3a?w=800',
-  latte:        'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800',
-  cold:         'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=800',
-  iced:         'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=800',
-  brew:         'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=800',
-  chai:         'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=800',
-  tea:          'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=800',
-  smoothie:     'https://images.unsplash.com/photo-1502741224143-90386d7f8c82?w=800',
-  toast:        'https://images.unsplash.com/photo-1504630083234-14187a9df0f5?w=800',
-  avocado:      'https://images.unsplash.com/photo-1543362906-acfc16c67564?w=800',
-  cake:         'https://images.unsplash.com/photo-1551024601-bec78aea704b?w=800',
-  brownie:      'https://images.unsplash.com/photo-1515037893149-de7f840978e2?w=800',
-  croissant:    'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=800',
-  pancake:      'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=800',
-};
-const DEFAULT_IMG = 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=800';
+  useEffect(() => {
+    Animated.spring(scaleAnim, {
+      toValue: scale,
+      friction: 6,
+      tension: 60,
+      useNativeDriver: true,
+    }).start();
+  }, [scale]);
 
-function getItemImage(name: string, imageUrl?: string): string {
-  if (imageUrl) return imageUrl;
-  const lower = name.toLowerCase();
-  for (const [key, url] of Object.entries(IMG_FALLBACK_MAP)) {
-    if (lower.includes(key)) return url;
-  }
-  return DEFAULT_IMG;
-}
+  useEffect(() => {
+    Animated.sequence([
+      Animated.timing(bounceAnim, { toValue: 1.08, duration: 100, useNativeDriver: true }),
+      Animated.spring(bounceAnim, { toValue: 1, friction: 5, useNativeDriver: true }),
+    ]).start();
+  }, [quantity]);
 
-const ALLERGEN_MAP: Record<string, string[]> = {
-  cappuccino: ['Dairy', 'Caffeine'],
-  espresso:   ['Caffeine'],
-  latte:      ['Dairy', 'Caffeine'],
-  chai:       ['Dairy', 'Gluten'],
-  croissant:  ['Gluten', 'Dairy', 'Eggs'],
-  cake:       ['Gluten', 'Dairy', 'Eggs'],
-  brownie:    ['Gluten', 'Dairy', 'Eggs', 'Nuts'],
-  pancake:    ['Gluten', 'Dairy', 'Eggs'],
-};
-function getAllergens(name: string): string[] {
-  const lower = name.toLowerCase();
-  for (const [k, v] of Object.entries(ALLERGEN_MAP)) {
-    if (lower.includes(k)) return v;
-  }
-  return [];
-}
+  const cups = Array.from({ length: Math.min(quantity, 4) });
 
-const PAIRINGS: string[] = ['Croissant', 'Brownie', 'Banana Bread'];
-
-function InfoPill({ label, value }: { label: string; value: string }) {
   return (
-    <View style={pill.wrap}>
-      <Text style={pill.label}>{label}</Text>
-      <Text style={pill.value}>{value}</Text>
-    </View>
+    <Animated.View style={[styles.cupArea, { transform: [{ scale: bounceAnim }] }]}>
+      <View style={styles.cupsRow}>
+        {cups.map((_, i) => (
+          <Animated.View
+            key={i}
+            style={[
+              styles.cupWrapper,
+              {
+                transform: [{ scale: scaleAnim }],
+                marginLeft: i > 0 ? -18 * scale : 0,
+                zIndex: i,
+              },
+            ]}
+          >
+            <SingleCup />
+          </Animated.View>
+        ))}
+        {quantity > 4 && (
+          <View style={styles.extraBadge}>
+            <Text style={styles.extraBadgeText}>+{quantity - 4}</Text>
+          </View>
+        )}
+      </View>
+      {/* Steam lines */}
+      <View style={styles.steamRow}>
+        {[0, 1, 2].map((i) => (
+          <SteamLine key={i} delay={i * 200} />
+        ))}
+      </View>
+    </Animated.View>
   );
-}
+};
 
-const pill = StyleSheet.create({
-  wrap: { alignItems: 'center', backgroundColor: THEME.surface, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 8, minWidth: 74, borderWidth: 1, borderColor: THEME.border },
-  label: { fontSize: 10, color: THEME.muted, fontWeight: '500', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
-  value: { fontSize: 16, fontWeight: '800', color: THEME.primary },
-});
+const SteamLine = ({ delay }: { delay: number }) => {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(anim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [0, -18] });
+  const opacity = anim.interpolate({ inputRange: [0, 0.3, 0.8, 1], outputRange: [0, 0.6, 0.3, 0] });
+
+  return (
+    <Animated.View style={[styles.steamLine, { transform: [{ translateY }], opacity }]} />
+  );
+};
+
+const SingleCup = () => (
+  <View style={styles.cup}>
+    {/* Cup body */}
+    <View style={styles.cupBody}>
+      {/* Coffee inside */}
+      <View style={styles.coffeeInside} />
+      {/* Shine */}
+      <View style={styles.cupShine} />
+    </View>
+    {/* Handle */}
+    <View style={styles.cupHandle} />
+    {/* Saucer */}
+    <View style={styles.saucer} />
+  </View>
+);
 
 export default function MenuItemDetailScreen() {
-  const navigation = useNavigation<Nav>();
-  const { params } = useRoute<Route>();
-  const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>();
+  const route = useRoute<Route>();
+  const { item, cafeId } = route.params;
   const { addToCart } = useCart();
-  const [qty, setQty] = useState(1);
+
+  const [selectedSize, setSelectedSize] = useState(SIZES[1]);
+  const [quantity, setQuantity] = useState(1);
+  const [selectedMilk, setSelectedMilk] = useState('whole');
   const [adding, setAdding] = useState(false);
 
-  const item = params.item;
-  const cafeId = params.cafeId;
-  const imgSrc = getItemImage(item.name, item.image_url);
-  const allergens = getAllergens(item.name);
+  const basePrice = item.price || 150;
+  const currentPrice = basePrice + selectedSize.priceOffset;
+  const totalPrice = currentPrice * quantity;
+  const totalCaffeine = selectedSize.caffeine * quantity;
+
+  const handleSizeChange = (size: any) => setSelectedSize(size);
+  const handleQtyInc = () => setQuantity(q => Math.min(q + 1, 9));
+  const handleQtyDec = () => setQuantity(q => Math.max(q - 1, 1));
 
   const handleAddToCart = async () => {
     try {
       setAdding(true);
-      await addToCart(cafeId, item.id, qty);
-      Alert.alert('Added to cart ✅', `${qty}× ${item.name} added to your cart.`, [
-        { text: 'Continue browsing', style: 'cancel' },
-        { text: 'View Cart', onPress: () => navigation.navigate('Cart') },
-      ]);
+      await addToCart(cafeId, item.id, quantity);
+      navigation.goBack();
     } catch (e: any) {
       Alert.alert('Error', e?.response?.data?.message || 'Could not add to cart');
     } finally {
@@ -126,262 +161,366 @@ export default function MenuItemDetailScreen() {
   };
 
   return (
-    <View style={[s.root, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" />
+    <SafeAreaView style={styles.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F2EDE8" />
 
-      {/* ── Hero Image ── */}
-      <View style={s.hero}>
-        <Image source={{ uri: imgSrc }} style={s.heroImg} />
-        {/* Gradient overlay */}
-        <View style={s.heroOverlay} />
-
-        {/* Back button */}
-        <TouchableOpacity onPress={() => navigation.goBack()} style={[s.backBtn, { top: 12 }]}>
-          <Text style={s.backTxt}>←</Text>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.goBack()}>
+          <AppIcon name="back" size={20} color="#3A2A20" />
         </TouchableOpacity>
-
-        {/* Veg/Non-veg indicator */}
-        <View style={[s.vegBadge, { backgroundColor: item.is_veg ? THEME.greenBg : '#FFF3CD', top: 12, right: 16 }]}>
-          <View style={[s.vegDot, { backgroundColor: item.is_veg ? '#22863A' : '#E65C00' }]} />
-          <Text style={[s.vegTxt, { color: item.is_veg ? THEME.greenTxt : '#E65C00' }]}>
-            {item.is_veg ? 'Pure Veg' : 'Non-Veg'}
-          </Text>
-        </View>
-
-        {/* Hero bottom info overlay */}
-        <View style={s.heroBottom}>
-          {item.is_popular ? (
-            <View style={s.popularChip}>
-              <Text style={s.popularChipTxt}>★ Bestseller</Text>
-            </View>
-          ) : null}
-          <Text style={s.heroTitle}>{item.name}</Text>
-          {item.cafeName && (
-            <Text style={s.heroCafe}>from {item.cafeName}</Text>
-          )}
-        </View>
+        <Text style={styles.headerTitle}>{item.name}</Text>
+        <TouchableOpacity style={styles.iconBtn}>
+          <AppIcon name="vegan" size={20} color="#3A2A20" />
+        </TouchableOpacity>
       </View>
 
-      <ScrollView style={s.body} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
-        {/* ── Quick Info Pills ── */}
-        <View style={s.pillsRow}>
-          <InfoPill label="Price" value={`₹${item.price}`} />
-          <InfoPill label="Prep Time" value={`${item.prep_time_minutes ?? '—'} min`} />
-          {item.calories ? <InfoPill label="Calories" value={`${item.calories}`} /> : null}
-          <InfoPill label="Serves" value="1" />
+        {/* Hero image area */}
+        <View style={styles.heroArea}>
+          <CoffeeCup scale={selectedSize.scale} quantity={quantity} />
         </View>
 
-        {/* ── Description ── */}
-        {item.description ? (
-          <View style={s.section}>
-            <Text style={s.sectionTitle}>About this item</Text>
-            <Text style={s.descTxt}>{item.description}</Text>
-          </View>
-        ) : null}
+        {/* Card */}
+        <View style={styles.card}>
 
-        {/* ── Highlights ── */}
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>Highlights</Text>
-          <View style={s.tagsWrap}>
-            {item.is_popular ? <View style={[s.tagChip, { backgroundColor: '#FEE2E2' }]}><Text style={[s.tagChipTxt, { color: THEME.accent }]}>🔥 Bestseller</Text></View> : null}
-            {item.is_veg ? <View style={[s.tagChip, { backgroundColor: THEME.greenBg }]}><Text style={[s.tagChipTxt, { color: THEME.greenTxt }]}>🥦 Vegetarian</Text></View> : <View style={[s.tagChip, { backgroundColor: '#FFF3CD' }]}><Text style={[s.tagChipTxt, { color: '#E65C00' }]}>🍖 Non-Veg</Text></View>}
-            {item.prep_time_minutes <= 10 ? <View style={s.tagChip}><Text style={s.tagChipTxt}>⚡ Quick Prep</Text></View> : null}
-            {(item.calories ?? 999) < 200 ? <View style={s.tagChip}><Text style={s.tagChipTxt}>💚 Low Calorie</Text></View> : null}
-            <View style={s.tagChip}><Text style={s.tagChipTxt}>✨ Made Fresh</Text></View>
-          </View>
-        </View>
-
-        {/* ── Allergens ── */}
-        {allergens.length > 0 ? (
-          <View style={s.section}>
-            <Text style={s.sectionTitle}>Allergen Info</Text>
-            <View style={s.tagsWrap}>
-              {allergens.map((a) => (
-                <View key={a} style={[s.tagChip, { backgroundColor: '#FFF3CD', borderColor: '#F5A623' }]}>
-                  <Text style={[s.tagChipTxt, { color: '#9A6200' }]}>⚠️ {a}</Text>
-                </View>
-              ))}
+          {/* Best seller + price */}
+          <View style={styles.row}>
+            <View style={styles.bestSellerBadge}>
+              <AppIcon name="popular" size={11} color="#fff" fill="#fff" />
+              <Text style={styles.badgeText}>{item.is_popular ? 'Best Seller' : 'Popular'}</Text>
             </View>
+            <Text style={styles.priceText}>₹{totalPrice}</Text>
           </View>
-        ) : null}
 
-        {/* ── Pairs Well With ── */}
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>Pairs Well With</Text>
-          <View style={s.tagsWrap}>
-            {PAIRINGS.map((p) => (
-              <View key={p} style={[s.tagChip, { backgroundColor: '#EDE4D4', borderColor: THEME.border }]}>
-                <Text style={[s.tagChipTxt, { color: THEME.tagTxt }]}>☕ {p}</Text>
-              </View>
+          {/* Name */}
+          <Text style={styles.itemName}>{item.name}</Text>
+
+          {/* Description */}
+          <Text style={styles.itemDesc}>
+            {item.description || "Experience the perfect blend of tradition and craftsmanship. Smooth, bold, and endlessly satisfying."}
+          </Text>
+
+          {/* Caffeine badge */}
+          <View style={styles.caffeineBadge}>
+            <AppIcon name="zap" size={15} color="#C17D2E" />
+            <Text style={styles.caffeineText}>
+              <Text style={styles.caffeineBold}>{totalCaffeine} mg</Text> caffeine
+            </Text>
+          </View>
+
+          {/* Divider */}
+          <View style={styles.divider} />
+
+          {/* Size selector */}
+          <Text style={styles.sectionLabel}>Size</Text>
+          <View style={styles.sizeRow}>
+            {SIZES.map((s) => (
+              <TouchableOpacity
+                key={s.id}
+                style={[styles.sizeBtn, selectedSize.id === s.id && styles.sizeBtnActive]}
+                onPress={() => handleSizeChange(s)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.sizeBtnLabel, selectedSize.id === s.id && styles.sizeBtnLabelActive]}>
+                  {s.label}
+                </Text>
+                <Text style={[styles.sizeBtnMl, selectedSize.id === s.id && styles.sizeBtnMlActive]}>
+                  {s.ml} ml
+                </Text>
+              </TouchableOpacity>
             ))}
           </View>
+
+          {/* Divider */}
+          <View style={styles.divider} />
+
+          {/* Quantity */}
+          <Text style={styles.sectionLabel}>Quantity</Text>
+          <View style={styles.qtyRow}>
+            <TouchableOpacity style={styles.qtyBtn} onPress={handleQtyDec} activeOpacity={0.7}>
+              <Text style={styles.qtyBtnText}>−</Text>
+            </TouchableOpacity>
+            <Text style={styles.qtyValue}>{quantity}</Text>
+            <TouchableOpacity style={styles.qtyBtn} onPress={handleQtyInc} activeOpacity={0.7}>
+              <Text style={styles.qtyBtnText}>+</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Divider */}
+          <View style={styles.divider} />
+
+          {/* Milk type */}
+          <Text style={styles.sectionLabel}>Milk Type</Text>
+          <View style={styles.milkRow}>
+            {MILKS.map((m) => (
+              <TouchableOpacity
+                key={m.id}
+                style={[styles.milkBtn, selectedMilk === m.id && styles.milkBtnActive]}
+                onPress={() => setSelectedMilk(m.id)}
+                activeOpacity={0.8}
+              >
+                <AppIcon name={m.icon} size={20} color={selectedMilk === m.id ? '#3D2010' : '#8B6F5A'} />
+                <Text style={[styles.milkLabel, selectedMilk === m.id && styles.milkLabelActive]}>
+                  {m.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
         </View>
-
-        {/* ── View Café CTA ── */}
-        <TouchableOpacity
-          style={s.viewCafeBtn}
-          onPress={() => navigation.navigate('CafeDetail', { cafeId })}
-          activeOpacity={0.8}
-        >
-          <Text style={s.viewCafeTxt}>🏠 View {item.cafeName ?? 'Café'} Details</Text>
-        </TouchableOpacity>
-
       </ScrollView>
 
-      {/* ── Sticky Footer: Qty + Add to Cart ── */}
-      <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-        <View style={s.qtyBox}>
-          <TouchableOpacity onPress={() => setQty(q => Math.max(1, q - 1))} style={s.qtyBtn}>
-            <Text style={s.qtyBtnTxt}>−</Text>
-          </TouchableOpacity>
-          <Text style={s.qtyNum}>{qty}</Text>
-          <TouchableOpacity onPress={() => setQty(q => q + 1)} style={s.qtyBtn}>
-            <Text style={s.qtyBtnTxt}>+</Text>
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity style={s.addBtn} onPress={handleAddToCart} activeOpacity={0.8} disabled={adding}>
-          <Text style={s.addBtnTxt}>{adding ? 'Adding...' : `Add to Cart  ₹${item.price * qty}`}</Text>
+      {/* Add to cart button */}
+      <View style={styles.footer}>
+        <TouchableOpacity
+          style={styles.addToCartBtn}
+          activeOpacity={0.88}
+          onPress={handleAddToCart}
+          disabled={adding}
+        >
+          <AppIcon name="cart" size={18} color="#fff" />
+          <Text style={styles.addToCartText}>
+            {adding ? 'Adding...' : `Add to Cart  —  ₹${totalPrice}`}
+          </Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: THEME.bg },
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#F2EDE8' },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  iconBtn: {
+    width: 40, height: 40,
+    borderRadius: 12,
+    backgroundColor: '#EAE4DC',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  iconBtnText: { fontSize: 18, color: '#3A2A1A' },
+  headerTitle: {
+    flex: 1, textAlign: 'center',
+    fontSize: 18, fontWeight: '700', color: '#1A0F05',
+  },
+
+  scroll: { paddingBottom: 110 },
 
   // Hero
-  hero: { height: 320, position: 'relative', overflow: 'hidden' },
-  heroImg: { width: '100%', height: '100%', resizeMode: 'cover' },
-  heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  backBtn: {
-    position: 'absolute',
-    left: 16,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+  heroArea: {
+    height: 230,
+    backgroundColor: '#EDE7DF',
+    marginHorizontal: 16,
     borderRadius: 20,
-    width: 38,
-    height: 38,
     alignItems: 'center',
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+    marginBottom: 0,
+  },
+  cupArea: {
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 16,
+  },
+  cupsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
     justifyContent: 'center',
   },
-  backTxt: { color: '#fff', fontSize: 20, fontWeight: '600' },
-  vegBadge: {
-    position: 'absolute',
-    right: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
+  cupWrapper: { alignItems: 'center' },
+  extraBadge: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: '#5C3A1E',
+    alignItems: 'center', justifyContent: 'center',
+    marginLeft: 6, marginBottom: 20,
   },
-  vegDot: { width: 8, height: 8, borderRadius: 4 },
-  vegTxt: { fontSize: 11, fontWeight: '700' },
-  heroBottom: {
+  extraBadgeText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+
+  // Cup drawing
+  cup: { alignItems: 'center', width: 100 },
+  cupBody: {
+    width: 80, height: 60,
+    borderRadius: 6,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    backgroundColor: '#F5F0EC',
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1.5,
+    borderColor: '#DDD5C8',
+  },
+  coffeeInside: {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,
-    padding: 20,
+    height: 42,
+    backgroundColor: '#4A2C14',
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
   },
-  popularChip: {
-    alignSelf: 'flex-start',
-    backgroundColor: THEME.accent,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginBottom: 8,
+  cupShine: {
+    position: 'absolute',
+    top: 4, left: 8,
+    width: 14, height: 8,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+    transform: [{ rotate: '-20deg' }],
   },
-  popularChipTxt: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  heroTitle: { fontSize: 28, fontWeight: '800', color: '#fff', lineHeight: 34 },
-  heroCafe: { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 4 },
-
-  // Body
-  body: { flex: 1 },
-
-  // Pills row
-  pillsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    justifyContent: 'center',
-    flexWrap: 'wrap',
-  },
-
-  // Sections
-  section: { paddingHorizontal: 20, marginBottom: 20 },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: THEME.primary, marginBottom: 10 },
-  descTxt: { fontSize: 15, color: '#5A5A5A', lineHeight: 24 },
-
-  // Tags
-  tagsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tagChip: {
-    backgroundColor: THEME.tagBg,
+  cupHandle: {
+    position: 'absolute',
+    right: 8,
+    marginTop: -48,
+    width: 18, height: 28,
     borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderWidth: 1,
-    borderColor: THEME.border,
+    borderWidth: 3,
+    borderColor: '#DDD5C8',
+    backgroundColor: 'transparent',
+    alignSelf: 'flex-end',
   },
-  tagChipTxt: { fontSize: 12, fontWeight: '600', color: THEME.tagTxt },
-
-  // View Café CTA
-  viewCafeBtn: {
-    marginHorizontal: 20,
-    marginBottom: 24,
-    backgroundColor: THEME.surface,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
+  saucer: {
+    width: 96, height: 10,
+    borderRadius: 50,
+    backgroundColor: '#EDE6DC',
     borderWidth: 1,
-    borderColor: THEME.border,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
-      android: { elevation: 2 },
-      web: { boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
-    }),
+    borderColor: '#D5CCBF',
+    marginTop: -2,
   },
-  viewCafeTxt: { fontSize: 14, fontWeight: '700', color: THEME.primary },
-
-  // Sticky Footer
-  footer: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    backgroundColor: THEME.surface,
-    borderTopWidth: 1,
-    borderTopColor: THEME.border,
+  steamRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.08, shadowRadius: 12 },
-      android: { elevation: 12 },
-      web: { boxShadow: '0 -4px 20px rgba(0,0,0,0.08)' },
-    }),
+    justifyContent: 'center',
+    height: 24,
+    marginBottom: 4,
+    position: 'absolute',
+    top: -28,
+    alignSelf: 'center',
   },
-  qtyBox: {
+  steamLine: {
+    width: 3, height: 16,
+    borderRadius: 2,
+    backgroundColor: '#9C8878',
+    opacity: 0.5,
+  },
+
+  // Card
+  card: {
+    backgroundColor: '#FDFAF6',
+    marginHorizontal: 16,
+    borderRadius: 24,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    marginTop: -8,
+  },
+
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+
+  bestSellerBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: '#F5EAD8',
+    paddingHorizontal: 12, paddingVertical: 5,
+    borderRadius: 50,
+  },
+  badgeStar: { color: '#C17D2E', fontSize: 12 },
+  badgeText: { color: '#8B5E20', fontSize: 12, fontWeight: '600' },
+
+  priceText: { fontSize: 26, fontWeight: '800', color: '#1A0F05' },
+
+  itemName: { fontSize: 28, fontWeight: '800', color: '#1A0F05', letterSpacing: -0.5, marginBottom: 8 },
+  itemDesc: { fontSize: 14, color: '#7A5C3A', lineHeight: 21, marginBottom: 12 },
+
+  caffeineBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: '#FDF0DC',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 50,
+    marginBottom: 16,
+  },
+  caffeineIcon: { fontSize: 13, color: '#C17D2E' },
+  caffeineText: { fontSize: 13, color: '#8B5E20' },
+  caffeineBold: { fontWeight: '800', color: '#7A4A10' },
+
+  divider: { height: 1, backgroundColor: '#EDE6DC', marginVertical: 16 },
+
+  sectionLabel: { fontSize: 17, fontWeight: '700', color: '#1A0F05', marginBottom: 12 },
+
+  // Size
+  sizeRow: { flexDirection: 'row', gap: 10 },
+  sizeBtn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#DDD5C8',
+    backgroundColor: '#FAF5EE',
+  },
+  sizeBtnActive: { backgroundColor: '#3D2010', borderColor: '#3D2010' },
+  sizeBtnLabel: { fontSize: 14, fontWeight: '700', color: '#4A3520', marginBottom: 2 },
+  sizeBtnLabelActive: { color: '#fff' },
+  sizeBtnMl: { fontSize: 11, color: '#8C7060' },
+  sizeBtnMlActive: { color: '#C8A882' },
+
+  // Quantity
+  qtyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0E8D8',
-    borderRadius: 12,
-    padding: 4,
+    backgroundColor: '#F2EDE8',
+    borderRadius: 16,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
-  qtyBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: THEME.primary, alignItems: 'center', justifyContent: 'center' },
-  qtyBtnTxt: { fontSize: 18, fontWeight: '700', color: '#fff' },
-  qtyNum: { fontSize: 16, fontWeight: '800', color: THEME.primary, minWidth: 32, textAlign: 'center' },
-  addBtn: {
-    flex: 1,
-    backgroundColor: THEME.accent,
+  qtyBtn: {
+    flex: 1, height: 48, alignItems: 'center', justifyContent: 'center',
+  },
+  qtyBtnText: { fontSize: 22, color: '#5C3A1E', fontWeight: '400' },
+  qtyValue: {
+    flex: 2, textAlign: 'center',
+    fontSize: 22, fontWeight: '700', color: '#1A0F05',
+  },
+
+  // Milk
+  milkRow: { flexDirection: 'row', gap: 10 },
+  milkBtn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 12, paddingHorizontal: 4,
     borderRadius: 14,
-    paddingVertical: 16,
+    borderWidth: 1.5,
+    borderColor: '#DDD5C8',
+    backgroundColor: '#FAF5EE',
+    gap: 5,
+  },
+  milkBtnActive: { backgroundColor: '#3D2010', borderColor: '#3D2010' },
+  milkIcon: { fontSize: 22 },
+  milkLabel: {
+    fontSize: 10.5, fontWeight: '600',
+    color: '#5A4025', textAlign: 'center', lineHeight: 14,
+  },
+  milkLabelActive: { color: '#C8A882' },
+
+  // Footer
+  footer: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    paddingHorizontal: 16, paddingBottom: 28, paddingTop: 10,
+    backgroundColor: '#F2EDE8',
+  },
+  addToCartBtn: {
+    backgroundColor: '#3D2010',
+    borderRadius: 18,
+    paddingVertical: 18,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 10,
   },
-  addBtnTxt: { fontSize: 16, fontWeight: '800', color: '#fff', letterSpacing: 0.3 },
+  cartIcon: { fontSize: 18 },
+  addToCartText: { color: '#fff', fontSize: 17, fontWeight: '700', letterSpacing: 0.2 },
 });

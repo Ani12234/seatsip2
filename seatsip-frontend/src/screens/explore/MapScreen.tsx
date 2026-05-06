@@ -1,224 +1,863 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
+  ActivityIndicator,
+  Animated,
+  Dimensions,
+  FlatList,
   Image,
-  ScrollView,
+  Linking,
+  Modal,
   Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { cafesApi } from '../../services/api';
+import { RootStackParamList } from '../../navigation/types';
+import AppIcon from '../../components/ui/AppIcon';
+import MapCanvas from './MapCanvas';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_WIDTH = Math.min(292, SCREEN_WIDTH - 48);
+
+type Nav = NativeStackNavigationProp<RootStackParamList>;
+type Category = 'all' | 'cafe' | 'restaurant' | 'cloud_kitchen';
+type Source = 'seatsip' | 'foodmap';
+
+type City = {
+  id: string;
+  name: string;
+  state: string;
+  lat: number;
+  lng: number;
+  zoom_level: number;
+};
+
+type Restaurant = {
+  id: string;
+  source: Source;
+  name: string;
+  description: string;
+  cuisine_type: string;
+  category: Exclude<Category, 'all'>;
+  address: string;
+  lat: number;
+  lng: number;
+  rating: string;
+  total_ratings: number;
+  price_range: number;
+  is_open: boolean;
+  image_url?: string;
+  tags: string[];
+  distance_km?: number;
+};
+
+const CITIES: City[] = [
+  { id: 'bengaluru', name: 'Bengaluru', state: 'Karnataka', lat: 12.9716, lng: 77.5946, zoom_level: 13 },
+  { id: 'mumbai', name: 'Mumbai', state: 'Maharashtra', lat: 19.076, lng: 72.8777, zoom_level: 12 },
+  { id: 'delhi', name: 'Delhi', state: 'Delhi', lat: 28.6139, lng: 77.209, zoom_level: 12 },
+  { id: 'chennai', name: 'Chennai', state: 'Tamil Nadu', lat: 13.0827, lng: 80.2707, zoom_level: 13 },
+  { id: 'hyderabad', name: 'Hyderabad', state: 'Telangana', lat: 17.385, lng: 78.4867, zoom_level: 13 },
+  { id: 'pune', name: 'Pune', state: 'Maharashtra', lat: 18.5204, lng: 73.8567, zoom_level: 13 },
+  { id: 'kolkata', name: 'Kolkata', state: 'West Bengal', lat: 22.5726, lng: 88.3639, zoom_level: 13 },
+  { id: 'jaipur', name: 'Jaipur', state: 'Rajasthan', lat: 26.9124, lng: 75.7873, zoom_level: 13 },
+  { id: 'kochi', name: 'Kochi', state: 'Kerala', lat: 9.9312, lng: 76.2673, zoom_level: 13 },
+  { id: 'chandigarh', name: 'Chandigarh', state: 'Punjab', lat: 30.7333, lng: 76.7794, zoom_level: 13 },
+];
+
+const CATEGORY_OPTIONS: { id: Category; label: string; icon: string }[] = [
+  { id: 'all', label: 'All', icon: 'food' },
+  { id: 'cafe', label: 'Cafes', icon: 'coffee' },
+  { id: 'restaurant', label: 'Restaurants', icon: 'food' },
+  { id: 'cloud_kitchen', label: 'Cloud Kitchens', icon: 'kitchen' },
+];
+
+const CONCEPTS = [
+  ['cafe', 'Third Wave Corner', 'Specialty Coffee', 'Single-origin brews, sourdough toast, and quiet work tables.', 2, ['coffee', 'breakfast', 'wifi']],
+  ['restaurant', 'Copper Tiffin', 'South Indian', 'Crisp dosas, filter coffee, thalis, and family-style meals.', 2, ['veg', 'family', 'quick']],
+  ['restaurant', 'Biryani Circuit', 'Biryani', 'Slow dum biryani with kebabs, salan, and late-night delivery.', 2, ['spicy', 'late night', 'popular']],
+  ['cloud_kitchen', 'Box & Bowl Co.', 'Asian Bowls', 'Delivery-first bowls with noodles, rice, sauces, and add-ons.', 1, ['delivery only', 'fast', 'bowls']],
+  ['cafe', 'Roast Lane', 'Cafe', 'Espresso, iced drinks, sandwiches, and a rotating dessert counter.', 2, ['desserts', 'coffee', 'casual']],
+] as const;
+
+const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=900&q=80';
+const PIN_COLORS: Record<Exclude<Category, 'all'>, string> = {
+  cafe: '#FF7A3D',
+  restaurant: '#E63946',
+  cloud_kitchen: '#6C63FF',
+};
+
+function distanceKm(aLat: number, aLng: number, bLat: number, bLng: number) {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const earthKm = 6371;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const lat1 = toRad(aLat);
+  const lat2 = toRad(bLat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * earthKm * Math.asin(Math.sqrt(h));
+}
+
+function buildFoodMapRestaurants(city: City): Restaurant[] {
+  return CONCEPTS.map(([category, name, cuisineType, description, priceRange, tags], index) => {
+    const angle = ((index * 60 + CITIES.findIndex((item) => item.id === city.id) * 13) * Math.PI) / 180;
+    const radius = 0.012 + (index % 3) * 0.006;
+    const lat = Number((city.lat + Math.sin(angle) * radius).toFixed(6));
+    const lng = Number((city.lng + Math.cos(angle) * radius).toFixed(6));
+
+    return {
+      id: `${city.id}-${index + 1}`,
+      source: 'foodmap',
+      name: `${name} ${city.name}`,
+      description,
+      cuisine_type: cuisineType,
+      category: category as Exclude<Category, 'all'>,
+      address: `${12 + index}, ${city.name} Central, ${city.state}`,
+      lat,
+      lng,
+      rating: (4.1 + (index % 7) / 10).toFixed(1),
+      total_ratings: 120 + index * 23,
+      price_range: priceRange,
+      is_open: index !== 4,
+      image_url: '',
+      tags: [...tags],
+      distance_km: Number(distanceKm(city.lat, city.lng, lat, lng).toFixed(1)),
+    };
+  });
+}
+
+function cafeToRestaurant(cafe: any, city: City): Restaurant {
+  const lat = Number(cafe.latitude || city.lat);
+  const lng = Number(cafe.longitude || city.lng);
+  let tags: string[] = [];
+
+  try {
+    tags = Array.isArray(cafe.tags) ? cafe.tags : JSON.parse(cafe.tags || '[]');
+  } catch {
+    tags = [];
+  }
+
+  return {
+    id: cafe.id,
+    source: 'seatsip',
+    name: cafe.name,
+    description: cafe.description || 'Fresh coffee, meals, and table reservations.',
+    cuisine_type: 'Cafe',
+    category: 'cafe',
+    address: cafe.address,
+    lat,
+    lng,
+    rating: String(cafe.rating || '4.5'),
+    total_ratings: Number(cafe.review_count || 0),
+    price_range: Number(cafe.price_level || 2),
+    is_open: Boolean(cafe.is_open ?? true),
+    image_url: cafe.image_url,
+    tags,
+    distance_km: Number(distanceKm(city.lat, city.lng, lat, lng).toFixed(1)),
+  };
+}
+
+function CategoryFilter({ value, onChange }: { value: Category; onChange: (value: Category) => void }) {
+  return (
+    <View style={styles.categoryBar}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryContent}>
+        {CATEGORY_OPTIONS.map((option) => {
+          const isActive = value === option.id;
+          return (
+            <TouchableOpacity
+              key={option.id}
+              activeOpacity={0.84}
+              style={[styles.categoryChip, isActive && styles.categoryChipActive]}
+              onPress={() => onChange(option.id)}
+            >
+              <AppIcon name={option.icon} size={15} color={isActive ? '#fff' : '#2A1A0E'} />
+              <Text style={[styles.categoryLabel, isActive && styles.categoryLabelActive]}>{option.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
+function CitySelector({
+  visible,
+  cities,
+  currentCity,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  cities: City[];
+  currentCity: City;
+  onSelect: (city: City) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const filteredCities = cities.filter((city) =>
+    `${city.name} ${city.state}`.toLowerCase().includes(query.trim().toLowerCase())
+  );
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <Pressable style={styles.citySheet}>
+          <View style={styles.citySheetHeader}>
+            <Text style={styles.citySheetTitle}>Select city</Text>
+            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+              <AppIcon name="close" size={16} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.citySearch}>
+            <AppIcon name="search" size={16} color="#7B6B5A" />
+            <TextInput
+              style={styles.citySearchInput}
+              placeholder="Search city or state"
+              placeholderTextColor="#9B8A78"
+              value={query}
+              onChangeText={setQuery}
+            />
+          </View>
+
+          <FlatList
+            data={filteredCities}
+            keyExtractor={(city) => city.id}
+            contentContainerStyle={styles.cityList}
+            renderItem={({ item }) => {
+              const selected = item.id === currentCity.id;
+              return (
+                <TouchableOpacity
+                  style={[styles.cityRow, selected && styles.cityRowActive]}
+                  onPress={() => {
+                    onSelect(item);
+                    setQuery('');
+                  }}
+                >
+                  <View style={styles.cityPin}>
+                    <AppIcon name="location" size={16} color={selected ? '#E63946' : '#7B6B5A'} />
+                  </View>
+                  <View style={styles.cityTextGroup}>
+                    <Text style={styles.cityName}>{item.name}</Text>
+                    <Text style={styles.cityState}>{item.state}</Text>
+                  </View>
+                  {selected && <AppIcon name="check" size={18} color="#E63946" />}
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function RestaurantCard({
+  restaurant,
+  selected,
+  onPress,
+  onOrder,
+  onDirections,
+}: {
+  restaurant: Restaurant;
+  selected: boolean;
+  onPress: () => void;
+  onOrder: () => void;
+  onDirections: () => void;
+}) {
+  const image = restaurant.image_url || FALLBACK_IMAGE;
+  const price = 'Rs '.repeat(Math.max(1, Math.min(restaurant.price_range, 4))).trim();
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.92}
+      style={[styles.restaurantCard, selected && styles.restaurantCardSelected]}
+      onPress={onPress}
+    >
+      <Image source={{ uri: image }} style={styles.restaurantImage} resizeMode="cover" />
+      <View style={styles.restaurantBody}>
+        <View style={styles.restaurantTopRow}>
+          <View style={styles.restaurantTitleGroup}>
+            <Text style={styles.restaurantName} numberOfLines={1}>{restaurant.name}</Text>
+            <Text style={styles.restaurantMeta} numberOfLines={1}>{restaurant.cuisine_type} · {price}</Text>
+          </View>
+          <View style={styles.ratingPill}>
+            <AppIcon name="popular" size={12} color="#1F5F2E" fill="#1F5F2E" />
+            <Text style={styles.ratingText}>{restaurant.rating}</Text>
+          </View>
+        </View>
+
+        <Text style={styles.restaurantDesc} numberOfLines={2}>{restaurant.description}</Text>
+
+        <View style={styles.tagRow}>
+          {restaurant.tags.slice(0, 3).map((tag) => (
+            <View key={tag} style={styles.tagPill}>
+              <Text style={styles.tagText}>{tag}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.cardActionRow}>
+          <TouchableOpacity style={styles.secondaryButton} onPress={onDirections}>
+            <AppIcon name="location" size={14} color="#2A1A0E" />
+            <Text style={styles.secondaryButtonText}>{restaurant.distance_km?.toFixed(1) || '0.0'} km</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.primaryButton} onPress={onOrder}>
+            <Text style={styles.primaryButtonText}>{restaurant.source === 'seatsip' ? 'View menu' : 'Explore'}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
 
 export default function MapScreen() {
+  const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
-  
+  const mapRef = useRef<any>(null);
+  const listRef = useRef<ScrollView>(null);
+  const listAnim = useRef(new Animated.Value(0)).current;
+
+  const [selectedCity, setSelectedCity] = useState(CITIES[0]);
+  const [category, setCategory] = useState<Category>('all');
+  const [query, setQuery] = useState('');
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
+  const [selectedId, setSelectedId] = useState<string>();
+  const [loading, setLoading] = useState(true);
+  const [showCityPicker, setShowCityPicker] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadRestaurants() {
+      setLoading(true);
+      const foodmapRows = buildFoodMapRestaurants(selectedCity);
+
+      try {
+        const response = await cafesApi.list({ city: selectedCity.name, limit: 30 });
+        const cafes = response.data?.data || [];
+        const mappedCafes = cafes.map((cafe: any) => cafeToRestaurant(cafe, selectedCity));
+        const rows = selectedCity.id === 'bengaluru' ? [...mappedCafes, ...foodmapRows] : foodmapRows;
+
+        if (mounted) {
+          setRestaurants(rows);
+          setSelectedId(rows[0]?.id);
+        }
+      } catch {
+        if (mounted) {
+          setRestaurants(foodmapRows);
+          setSelectedId(foodmapRows[0]?.id);
+        }
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    loadRestaurants();
+    return () => {
+      mounted = false;
+    };
+  }, [selectedCity]);
+
+  const visibleRestaurants = useMemo(() => {
+    const trimmedQuery = query.trim().toLowerCase();
+    return restaurants.filter((restaurant) => {
+      const matchesCategory = category === 'all' || restaurant.category === category;
+      const matchesSearch = !trimmedQuery || [
+        restaurant.name,
+        restaurant.description,
+        restaurant.cuisine_type,
+        restaurant.address,
+        restaurant.category,
+        ...restaurant.tags,
+      ].some((value) => value.toLowerCase().includes(trimmedQuery));
+
+      return matchesCategory && matchesSearch;
+    });
+  }, [category, query, restaurants]);
+
+  const selectedRestaurant =
+    visibleRestaurants.find((restaurant) => restaurant.id === selectedId) ||
+    visibleRestaurants[0];
+
+  useEffect(() => {
+    if (!selectedRestaurant && visibleRestaurants[0]) {
+      setSelectedId(visibleRestaurants[0].id);
+    }
+  }, [selectedRestaurant, visibleRestaurants]);
+
+  useEffect(() => {
+    Animated.spring(listAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 8,
+    }).start();
+  }, [listAnim, selectedCity]);
+
+  const selectRestaurant = (restaurant: Restaurant) => {
+    setSelectedId(restaurant.id);
+    const index = visibleRestaurants.findIndex((item) => item.id === restaurant.id);
+    if (index >= 0) {
+      listRef.current?.scrollTo({ x: index * (CARD_WIDTH + 14), animated: true });
+    }
+
+    mapRef.current?.focusRestaurant?.(restaurant);
+  };
+
+  const openDirections = (restaurant: Restaurant) => {
+    const queryText = encodeURIComponent(`${restaurant.name}, ${restaurant.address}`);
+    Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${queryText}`);
+  };
+
+  const openRestaurant = (restaurant: Restaurant) => {
+    if (restaurant.source === 'seatsip') {
+      navigation.navigate('Menu', { cafeId: restaurant.id, cafeName: restaurant.name });
+      return;
+    }
+
+    navigation.navigate('ExploreTab');
+  };
+
   return (
-    <View style={styles.container}>
-      {/* SIMULATED MAP BACKGROUND */}
-      <View style={styles.mapBackground}>
-        {/* Horizontal Lines */}
-        {[...Array(12)].map((_, i) => (
-          <View key={`h${i}`} style={[styles.gridLineH, { top: `${i * 10}%` }]} />
-        ))}
-        {/* Vertical Lines */}
-        {[...Array(8)].map((_, i) => (
-          <View key={`v${i}`} style={[styles.gridLineV, { left: `${i * 15}%` }]} />
-        ))}
-        
-        {/* DIAGNOL / CUSTOM LINES FOR REALISM */}
-        <View style={[styles.gridLineH, { top: '40%', transform: [{ rotate: '15deg' }] }]} />
-        <View style={[styles.gridLineV, { left: '60%', transform: [{ rotate: '-10deg' }] }]} />
-      </View>
+    <View style={styles.root}>
+      <StatusBar barStyle="light-content" />
 
-      {/* MARKERS */}
-      <View style={[styles.markerBase, { top: '20%', left: '35%' }]}>
-        <View style={styles.markerInactive}>
-          <Text style={styles.markerIconSmall}>☕</Text>
-        </View>
-        <View style={styles.markerPinLineInactive} />
-      </View>
+      <MapCanvas
+        ref={mapRef}
+        restaurants={visibleRestaurants}
+        city={selectedCity}
+        selectedId={selectedRestaurant?.id}
+        pinColors={PIN_COLORS}
+        onSelect={selectRestaurant}
+      />
 
-      <View style={[styles.markerBase, { top: '35%', left: '45%', zIndex: 10 }]}>
-        <View style={styles.markerActiveBrown}>
-          <Text style={styles.markerIcon}>☕</Text>
-          <Text style={styles.markerText}>SUNSET CAFE</Text>
-        </View>
-        <View style={styles.markerPinLine} />
-      </View>
+      <View style={[styles.topOverlay, { paddingTop: insets.top + 10 }]}>
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.cityButton} onPress={() => setShowCityPicker(true)}>
+            <AppIcon name="location" size={17} color="#E63946" />
+            <View style={styles.cityButtonTextGroup}>
+              <Text style={styles.cityButtonLabel}>FoodMap</Text>
+              <Text style={styles.cityButtonTitle} numberOfLines={1}>{selectedCity.name}</Text>
+            </View>
+            <AppIcon name="chevron_down" size={16} color="#F5EDD6" />
+          </TouchableOpacity>
 
-      <View style={[styles.markerBase, { top: '56%', left: '20%', zIndex: 5 }]}>
-        <View style={styles.markerActiveGreen}>
-          <Text style={styles.markerIcon}>🍽️</Text>
-          <Text style={styles.markerText}>GREEN VALLEY</Text>
-        </View>
-        <View style={styles.markerPinLine} />
-      </View>
-
-      {/* FLOATING ACTION BUTTONS (Right Side) */}
-      <View style={styles.fabContainer}>
-        <View style={styles.zoomControls}>
-          <TouchableOpacity style={styles.zoomBtn}>
-            <Text style={styles.zoomText}>+</Text>
-          </TouchableOpacity>
-          <View style={styles.zoomDivider} />
-          <TouchableOpacity style={styles.zoomBtn}>
-            <Text style={styles.zoomText}>−</Text>
-          </TouchableOpacity>
-        </View>
-        
-        <TouchableOpacity style={styles.locationFab}>
-          <Text style={styles.locationIcon}>⌖</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* TOP OVERLAYS (Search & Chips) */}
-      <SafeAreaView style={styles.topOverlay} pointerEvents="box-none">
-        <View style={styles.searchContainer}>
-          <TouchableOpacity style={styles.searchIconBox}>
-            <Text style={styles.searchIconTxt}>🔍</Text>
-          </TouchableOpacity>
-          <Text style={styles.searchPlaceholder}>Search curated spots...</Text>
-          <TouchableOpacity style={styles.filterIconBox}>
-            <Text style={styles.filterIconTxt}>⎚</Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          style={styles.chipScroll}
-          contentContainerStyle={styles.chipContainer}
-        >
-          <TouchableOpacity style={styles.chipActive}>
-            <Text style={styles.chipTextActive}>All</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.chipInactive}>
-            <Text style={styles.chipTextInactive}>Cafes</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.chipInactive}>
-            <Text style={styles.chipTextInactive}>Restaurants</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.chipInactive}>
-            <Text style={styles.chipTextInactive}>Bakeries</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
-
-      {/* BOTTOM CARD */}
-      <View style={[styles.bottomCardContainer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-        <View style={styles.bottomCard}>
-          <View style={styles.cardImageContainer}>
-            <Image 
-              source={{ uri: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=800' }} 
-              style={styles.cardImage}
+          <View style={styles.searchBox}>
+            <AppIcon name="search" size={16} color="#7B6B5A" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search food places"
+              placeholderTextColor="#8E7F70"
+              value={query}
+              onChangeText={setQuery}
             />
-            <View style={styles.openBadge}>
-              <Text style={styles.openBadgeText}>OPEN NOW</Text>
-            </View>
-          </View>
-          
-          <View style={styles.cardContent}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Sunset Cafe & Roastery</Text>
-              <View style={styles.ratingBadge}>
-                <Text style={styles.ratingStar}>★</Text>
-                <Text style={styles.ratingText}>4.8</Text>
-              </View>
-            </View>
-            
-            <Text style={styles.cardSubtitle}>SPECIALTY BREW • ARTISAN BAKERY</Text>
-            
-            <Text style={styles.cardDescription}>
-              Minimalist space known for their slow-pour experience and architecture books.
-            </Text>
-            
-            <View style={styles.cardFooter}>
-              <View style={styles.amenitiesRow}>
-                <View style={styles.amenityBox}><Text style={styles.amenityIcon}>📶</Text></View>
-                <View style={styles.amenityBox}><Text style={styles.amenityIcon}>♨️</Text></View>
-                <View style={styles.amenityBox}><Text style={styles.amenityIcon}>🔋</Text></View>
-              </View>
-              
-              <TouchableOpacity style={styles.directionsBtn}>
-                <Text style={styles.directionsBtnText}>GET DIRECTIONS</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
+
+        <CategoryFilter value={category} onChange={setCategory} />
       </View>
+
+      {loading && (
+        <View style={styles.loadingPill}>
+          <ActivityIndicator size="small" color="#E63946" />
+          <Text style={styles.loadingText}>Loading map</Text>
+        </View>
+      )}
+
+      {!loading && visibleRestaurants.length === 0 && (
+        <View style={styles.emptyState}>
+          <AppIcon name="search" size={22} color="#7B6B5A" />
+          <Text style={styles.emptyText}>No places found</Text>
+        </View>
+      )}
+
+      {visibleRestaurants.length > 0 && (
+        <Animated.View
+          style={[
+            styles.cardStrip,
+            {
+              paddingBottom: Math.max(insets.bottom, 18),
+              transform: [{ translateY: listAnim.interpolate({ inputRange: [0, 1], outputRange: [140, 0] }) }],
+            },
+          ]}
+        >
+          <ScrollView
+            ref={listRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={CARD_WIDTH + 14}
+            decelerationRate="fast"
+            contentContainerStyle={styles.cardStripContent}
+          >
+            {visibleRestaurants.map((restaurant) => (
+              <RestaurantCard
+                key={restaurant.id}
+                restaurant={restaurant}
+                selected={selectedRestaurant?.id === restaurant.id}
+                onPress={() => selectRestaurant(restaurant)}
+                onOrder={() => openRestaurant(restaurant)}
+                onDirections={() => openDirections(restaurant)}
+              />
+            ))}
+          </ScrollView>
+        </Animated.View>
+      )}
+
+      <CitySelector
+        visible={showCityPicker}
+        cities={CITIES}
+        currentCity={selectedCity}
+        onClose={() => setShowCityPicker(false)}
+        onSelect={(city) => {
+          setSelectedCity(city);
+          setCategory('all');
+          setQuery('');
+          setShowCityPicker(false);
+        }}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#E0D8CC' }, // Fallback bg
-  mapBackground: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#D9D0C1', // Map base color
-    overflow: 'hidden',
+  root: {
+    flex: 1,
+    backgroundColor: '#0D1B2A',
   },
-  gridLineH: { position: 'absolute', left: '-50%', right: '-50%', height: 1.5, backgroundColor: 'rgba(255,255,255,0.45)' },
-  gridLineV: { position: 'absolute', top: '-50%', bottom: '-50%', width: 1.5, backgroundColor: 'rgba(255,255,255,0.45)' },
-  
-  // Markers
-  markerBase: { position: 'absolute', alignItems: 'center' },
-  markerInactive: { backgroundColor: 'rgba(150, 140, 130, 0.8)', padding: 6, borderRadius: 6 },
-  markerIconSmall: { fontSize: 14, color: '#fff' },
-  markerPinLineInactive: { width: 2, height: 12, backgroundColor: 'rgba(150, 140, 130, 0.8)' },
-  
-  markerActiveBrown: { backgroundColor: '#4A3B22', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 4 },
-  markerActiveGreen: { backgroundColor: '#586A45', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 4 },
-  markerIcon: { fontSize: 12, color: '#fff', marginRight: 6 },
-  markerText: { color: '#EBE5D9', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
-  markerPinLine: { width: 2, height: 16, backgroundColor: '#4A3B22' },
-
-  // Floating Action Buttons
-  fabContainer: { position: 'absolute', right: 20, bottom: 340, alignItems: 'center', gap: 12, zIndex: 20 },
-  zoomControls: { backgroundColor: '#fff', borderRadius: 8, overflow: 'hidden', ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 8 }, android: { elevation: 4 }, web: { boxShadow: '0 4px 12px rgba(0,0,0,0.1)' } }) },
-  zoomBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
-  zoomText: { fontSize: 24, fontWeight: '300', color: '#1A1A1A' },
-  zoomDivider: { height: 1, backgroundColor: '#F0F0F0', marginHorizontal: 8 },
-  locationFab: { width: 44, height: 44, borderRadius: 8, backgroundColor: '#4A3B22', alignItems: 'center', justifyContent: 'center', ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 8 }, android: { elevation: 4 }, web: { boxShadow: '0 4px 12px rgba(0,0,0,0.1)' } }) },
-  locationIcon: { fontSize: 24, color: '#fff', fontWeight: '200' },
-
-  // Top Overlay
-  topOverlay: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, paddingTop: Platform.OS === 'android' ? 40 : 10 },
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', marginHorizontal: 20, borderRadius: 12, paddingRight: 16, ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12 }, android: { elevation: 6 }, web: { boxShadow: '0 4px 20px rgba(0,0,0,0.08)' } }) },
-  searchIconBox: { backgroundColor: '#4A3B22', borderTopLeftRadius: 12, borderBottomLeftRadius: 12, width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
-  searchIconTxt: { fontSize: 18, color: '#fff' },
-  searchPlaceholder: { flex: 1, fontSize: 16, color: '#A0A0A0', marginLeft: 16 },
-  filterIconBox: { padding: 4 },
-  filterIconTxt: { fontSize: 20, color: '#707070' },
-  
-  chipScroll: { marginTop: 16 },
-  chipContainer: { paddingHorizontal: 20, gap: 12, paddingBottom: 10 },
-  chipActive: { backgroundColor: '#3E2D11', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
-  chipInactive: { backgroundColor: '#F2E8D8', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
-  chipTextActive: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  chipTextInactive: { color: '#4A3B22', fontSize: 14, fontWeight: '500' },
-
-  // Bottom Card
-  bottomCardContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20, zIndex: 10 },
-  bottomCard: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 20 }, android: { elevation: 8 }, web: { boxShadow: '0 10px 40px rgba(0,0,0,0.15)' } }) },
-  cardImageContainer: { position: 'relative', height: 180 },
-  cardImage: { width: '100%', height: '100%' },
-  openBadge: { position: 'absolute', top: 16, left: 16, backgroundColor: '#fff', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 4 },
-  openBadgeText: { fontSize: 11, fontWeight: '700', color: '#1A1A1A', letterSpacing: 0.5 },
-  cardContent: { padding: 20 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  cardTitle: { fontSize: 20, fontWeight: '600', color: '#4A3B22', flex: 1, marginRight: 10 },
-  ratingBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#E2F1D1', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  ratingStar: { fontSize: 12, color: '#1A1A1A', marginRight: 4 },
-  ratingText: { fontSize: 14, fontWeight: '700', color: '#1A1A1A' },
-  cardSubtitle: { fontSize: 11, color: '#9E9E9E', marginTop: 6, letterSpacing: 0.5 },
-  cardDescription: { fontSize: 14, color: '#5C5C5C', marginTop: 14, lineHeight: 22 },
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 },
-  amenitiesRow: { flexDirection: 'row', gap: 8 },
-  amenityBox: { width: 34, height: 34, borderWidth: 1, borderColor: '#F0EBE1', borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FDFCF9' },
-  amenityIcon: { fontSize: 16 },
-  directionsBtn: { backgroundColor: '#4A3B22', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 6 },
-  directionsBtnText: { color: '#EBE5D9', fontSize: 12, fontWeight: '600', letterSpacing: 0.5 },
+  topOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(13, 27, 42, 0.9)',
+    paddingBottom: 10,
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+  },
+  cityButton: {
+    minWidth: 132,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cityButtonTextGroup: {
+    flex: 1,
+  },
+  cityButtonLabel: {
+    color: '#C9BBAA',
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  cityButtonTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  searchBox: {
+    flex: 1,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFF8EF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#2A1A0E',
+    fontSize: 14,
+    paddingVertical: 0,
+  },
+  categoryBar: {
+    marginTop: 12,
+  },
+  categoryContent: {
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  categoryChip: {
+    minHeight: 38,
+    borderRadius: 19,
+    paddingHorizontal: 14,
+    backgroundColor: '#FFF8EF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(42, 26, 14, 0.08)',
+  },
+  categoryChipActive: {
+    backgroundColor: '#E63946',
+    borderColor: '#E63946',
+  },
+  categoryLabel: {
+    color: '#2A1A0E',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  categoryLabelActive: {
+    color: '#FFFFFF',
+  },
+  loadingPill: {
+    position: 'absolute',
+    top: 158,
+    alignSelf: 'center',
+    borderRadius: 18,
+    backgroundColor: '#FFF8EF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  loadingText: {
+    color: '#2A1A0E',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  emptyState: {
+    position: 'absolute',
+    top: '48%',
+    alignSelf: 'center',
+    borderRadius: 18,
+    backgroundColor: '#FFF8EF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  emptyText: {
+    color: '#2A1A0E',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  cardStrip: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  cardStripContent: {
+    paddingHorizontal: 18,
+    gap: 14,
+  },
+  restaurantCard: {
+    width: CARD_WIDTH,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: '#FFF8EF',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  restaurantCardSelected: {
+    borderColor: '#E63946',
+  },
+  restaurantImage: {
+    height: 108,
+    width: '100%',
+    backgroundColor: '#E8C99A',
+  },
+  restaurantBody: {
+    padding: 14,
+  },
+  restaurantTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  restaurantTitleGroup: {
+    flex: 1,
+  },
+  restaurantName: {
+    color: '#20130A',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  restaurantMeta: {
+    color: '#7B6B5A',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 3,
+  },
+  ratingPill: {
+    height: 28,
+    borderRadius: 14,
+    paddingHorizontal: 8,
+    backgroundColor: '#DFF2DF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  ratingText: {
+    color: '#1F5F2E',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  restaurantDesc: {
+    color: '#5D4B3D',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 9,
+  },
+  tagRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 11,
+    minHeight: 24,
+  },
+  tagPill: {
+    borderRadius: 12,
+    backgroundColor: '#EFE5DA',
+    paddingHorizontal: 9,
+    justifyContent: 'center',
+  },
+  tagText: {
+    color: '#6A5745',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  cardActionRow: {
+    flexDirection: 'row',
+    gap: 9,
+    marginTop: 13,
+  },
+  secondaryButton: {
+    height: 40,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    backgroundColor: '#EFE5DA',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  secondaryButtonText: {
+    color: '#2A1A0E',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  primaryButton: {
+    flex: 1,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#2A1A0E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.46)',
+    justifyContent: 'flex-end',
+  },
+  citySheet: {
+    maxHeight: '78%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: '#0D1B2A',
+    paddingBottom: 18,
+  },
+  citySheetHeader: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  citySheetTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  closeButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  citySearch: {
+    height: 46,
+    marginHorizontal: 16,
+    marginTop: 14,
+    borderRadius: 23,
+    backgroundColor: '#FFF8EF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+  },
+  citySearchInput: {
+    flex: 1,
+    color: '#2A1A0E',
+    fontSize: 14,
+    paddingVertical: 0,
+  },
+  cityList: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  cityRow: {
+    minHeight: 58,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  cityRowActive: {
+    backgroundColor: 'rgba(230, 57, 70, 0.14)',
+  },
+  cityPin: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFF8EF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cityTextGroup: {
+    flex: 1,
+  },
+  cityName: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  cityState: {
+    color: '#A8B2C0',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
 });
-

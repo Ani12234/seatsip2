@@ -8,6 +8,7 @@ import { Order } from '../../types';
 import { RootStackParamList } from '../../navigation/types';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../theme';
 import { Button } from '../../components/ui';
+import AppIcon from '../../components/ui/AppIcon';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'OrderTracking'>;
@@ -68,7 +69,7 @@ export default function OrderTrackingScreen() {
       <StatusBar barStyle="dark-content" />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}><Text style={styles.backIcon}>←</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.goBack()}><AppIcon name="back" size={22} color={Colors.textPrimary} /></TouchableOpacity>
         <Text style={styles.title}>Order Status</Text>
         <View style={{ width: 32 }} />
       </View>
@@ -84,7 +85,7 @@ export default function OrderTrackingScreen() {
 
             {isCancelled ? (
               <View style={styles.cancelledBadge}>
-                <Text style={styles.cancelledText}>❌ Order Cancelled</Text>
+                <View style={styles.cancelledRow}><AppIcon name="close" size={22} color={Colors.error} /><Text style={styles.cancelledText}>Order Cancelled</Text></View>
               </View>
             ) : (
               <View style={styles.stepsContainer}>
@@ -95,7 +96,7 @@ export default function OrderTrackingScreen() {
                     <View key={step.key} style={styles.stepRow}>
                       <View style={styles.stepLeft}>
                         <View style={[styles.stepDot, isDone && styles.stepDotDone, isCurrent && styles.stepDotCurrent]}>
-                          <Text style={styles.stepIcon}>{isDone ? '✓' : step.icon}</Text>
+                          <AppIcon name={isDone ? 'check' : step.icon} size={16} color={isDone || isCurrent ? Colors.white : Colors.textSecondary} />
                         </View>
                         {i < STEPS.length - 1 && (
                           <View style={[styles.stepLine, isDone && styles.stepLineDone]} />
@@ -149,6 +150,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.error + '15', borderRadius: Radius.xl,
     padding: Spacing.xl, alignItems: 'center',
   },
+  cancelledRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cancelledText: { fontSize: Typography.xl, fontWeight: Typography.bold, color: Colors.error },
   stepsContainer: { gap: 0 },
   stepRow: { flexDirection: 'row', gap: 16 },
