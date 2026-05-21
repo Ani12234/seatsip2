@@ -7,6 +7,7 @@ import {
   StyleSheet,
   SafeAreaView,
   StatusBar,
+  ImageBackground,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -208,8 +209,13 @@ export default function NotificationsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f7f5f0" />
+    <ImageBackground 
+      source={require('../../assets/images/app_bg.png')} 
+      style={styles.safeArea}
+      resizeMode="cover"
+    >
+      <SafeAreaView style={{ flex: 1, width: '100%' }}>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
       {/* Header */}
       <View style={styles.header}>
@@ -248,7 +254,8 @@ export default function NotificationsScreen() {
         {/* Push Banner */}
         <PushNotificationBanner onPress={handleEnableNotifications} />
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
@@ -257,7 +264,7 @@ export default function NotificationsScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f7f5f0',
+    width: '100%',
   },
 
   // ── Header ──
@@ -267,7 +274,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 14,
-    backgroundColor: '#f7f5f0',
   },
   headerButton: {
     width: 40,
@@ -294,6 +300,7 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 32,
     gap: 10,
+    width: '100%',
   },
 
   // ── Notification Card ──

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,26 +6,45 @@ import {
   Image,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   Platform,
   Animated,
   Dimensions,
+  ActivityIndicator,
+  Modal,
+  TextInput,
+  Alert,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../navigation/types';
+import { cafesApi } from '../../services/api';
 import AppIcon from '../../components/ui/AppIcon';
+import * as ImagePicker from 'expo-image-picker';
 
 const { width, height } = Dimensions.get('window');
 const HEADER_HEIGHT = 320;
 
-const IMAGES = [
-  'https://images.unsplash.com/photo-1554118811-1e0d58224f24?q=80&w=800&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1559925393-8be0ec4767c8?q=80&w=800&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?q=80&w=800&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?q=80&w=800&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1497933322477-911b33364917?q=80&w=800&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1495147466023-ac5c588e2e94?q=80&w=800&auto=format&fit=crop',
-];
+function parseJsonArray(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.filter(Boolean).map(String);
+  if (typeof raw === 'string') {
+    try {
+      const v = JSON.parse(raw);
+      return Array.isArray(v) ? v.filter(Boolean).map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function galleryFromCafe(cafe: any): string[] {
+  if (!cafe) return [];
+  const fromField = parseJsonArray(cafe.images);
+  if (fromField.length) return fromField;
+  if (cafe.image_url) return [cafe.image_url];
+  return [];
+}
 
 type CafeDetailRouteProp = RouteProp<RootStackParamList, 'CafeDetail'>;
 
@@ -35,27 +54,123 @@ const DyuArtCafeScreen = () => {
   const scrollY = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [cafe, setCafe] = useState<any>(null);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
-  const cafeId = route.params?.cafeId || 'dyu-art-cafe';
-  const cafeName = 'Dyu Art Café';
+  const cafeId = route.params?.cafeId || '';
+  const gallery = galleryFromCafe(cafe);
+  const cafeName = cafe?.name || 'Café';
+  const moods = parseJsonArray(cafe?.moods);
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setLoadError(false);
+      const [{ data: cafeRes }, { data: revRes }] = await Promise.all([
+        cafesApi.getById(cafeId),
+        cafesApi.getReviews(cafeId, { limit: 4 }),
+      ]);
+      if (cafeRes.success) setCafe(cafeRes.data);
+      else setLoadError(true);
+      if (revRes.success && Array.isArray(revRes.data)) setReviews(revRes.data);
+      else setReviews([]);
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [cafeId]);
+
+  useEffect(() => {
+    if (!cafeId) {
+      setLoading(false);
+      setLoadError(true);
+      return;
+    }
+    loadData();
+  }, [loadData]);
+
+  const handleSubmitReview = async () => {
+    if (reviewRating < 1 || reviewRating > 5) {
+      Alert.alert('Invalid Rating', 'Please select a rating between 1 and 5 stars.');
+      return;
+    }
+    try {
+      setSubmittingReview(true);
+      await cafesApi.postReview(cafeId, {
+        rating: reviewRating,
+        comment: reviewComment.trim() || undefined,
+      });
+      setReviewModalVisible(false);
+      setReviewComment('');
+      setReviewRating(5);
+      Alert.alert('Review Submitted', 'Thank you for your feedback!');
+      loadData(); // Reload reviews
+    } catch (err: any) {
+      console.error('Review error:', err?.response?.data || err.message);
+      Alert.alert('Error', err?.response?.data?.message || 'Could not submit review. Please try again.');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  const handleAddPhoto = async () => {
+    try {
+      const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
+      if (cameraStatus !== 'granted') {
+        Alert.alert('Permission Denied', 'We need access to your camera to take photos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+        allowsEditing: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const uri = result.assets[0].uri;
+        // In a real app, we'd upload to S3/Cloudinary first.
+        // For this demo, we'll send a high-quality Unsplash image as a placeholder for the upload.
+        const demoUrl = 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=800';
+        
+        await cafesApi.addImage(cafeId, demoUrl);
+        Alert.alert('Success', 'Photo added to gallery!');
+        loadData(); // Refresh local data
+        // Navigate to the gallery screen to show the new content
+        navigation.navigate('CafeGallery', { cafeId, cafeName });
+      }
+    } catch (err) {
+      console.error('Camera error:', err);
+      Alert.alert('Error', 'Could not open camera. Please try again.');
+    }
+  };
 
   const handleReserve = () => {
-    navigation.navigate('TableSelect', { cafeId, cafeName });
+    const id = cafe?.id || cafeId;
+    navigation.navigate('TableSelect', { cafeId: id, cafeName });
   };
 
   const handleOrder = () => {
-    navigation.navigate('Menu', { cafeId, cafeName });
+    const id = cafe?.id || cafeId;
+    navigation.navigate('Menu', { cafeId: id, cafeName });
   };
 
   // Auto-play logic
   useEffect(() => {
+    if (gallery.length <= 1) return;
     const timer = setInterval(() => {
-      const nextIndex = (activeImageIndex + 1) % IMAGES.length;
+      const nextIndex = (activeImageIndex + 1) % gallery.length;
       scrollRef.current?.scrollTo({ x: nextIndex * width, animated: true });
-      // setActiveImageIndex is handled by onScroll
     }, 4000);
     return () => clearInterval(timer);
-  }, [activeImageIndex]);
+  }, [activeImageIndex, gallery.length]);
 
   // Parallax Effect for the Carousel
   const headerTranslate = scrollY.interpolate({
@@ -70,10 +185,35 @@ const DyuArtCafeScreen = () => {
     extrapolate: 'clamp',
   });
 
+  // if (loading) {
+  //   return (
+  //     <View style={[styles.container, styles.centered]}>
+  //       <ActivityIndicator size="large" color="#7A5240" />
+  //     </View>
+  //   );
+  // }
+
+  if (loadError || !cafe) {
+    return (
+      <View style={[styles.container, styles.centered, { padding: 24 }]}>
+        <Text style={styles.errorTitle}>We could not load this café.</Text>
+        <TouchableOpacity style={styles.errorBack} onPress={() => navigation.goBack()}>
+          <Text style={styles.errorBackText}>Go back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const slides = gallery.length ? gallery : [cafe.image_url || 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=800'];
+  const ratingVal = Number(cafe.rating) || 0;
+  const reviewCount = cafe.review_count ?? 0;
+  const hoursLabel = [cafe.open_time, cafe.close_time].filter(Boolean).join(' – ') || 'Hours on request';
+  const addressText = [cafe.address, cafe.city].filter(Boolean).join(', ') || '';
+
   return (
     <View style={styles.container}>
       {/* 1. Fixed Top Bar (Back & Camera buttons) */}
-      <View style={styles.staticOverlay} pointerEvents="box-none">
+      <View style={[styles.staticOverlay, { pointerEvents: 'box-none' }]}>
         <View style={styles.topBar}>
           <TouchableOpacity 
             style={styles.iconButton} 
@@ -81,8 +221,13 @@ const DyuArtCafeScreen = () => {
           >
             <AppIcon name="back" size={22} color="#111" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton}>
-            <View style={styles.iconButtonRow}><AppIcon name="photo" size={16} color="#111" /><Text style={styles.iconText}>{IMAGES.length}</Text></View>
+          <TouchableOpacity 
+            style={styles.iconButton} 
+            onPress={handleAddPhoto}
+          >
+            <View style={styles.iconButtonRow}>
+              <AppIcon name="camera" size={20} color="#111" />
+            </View>
           </TouchableOpacity>
         </View>
       </View>
@@ -91,7 +236,7 @@ const DyuArtCafeScreen = () => {
       <Animated.ScrollView
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true }
+          { useNativeDriver: false }
         )}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
@@ -116,7 +261,7 @@ const DyuArtCafeScreen = () => {
               if (index !== activeImageIndex) setActiveImageIndex(index);
             }}
           >
-            {IMAGES.map((uri, index) => (
+            {slides.map((uri, index) => (
               <Image
                 key={index}
                 source={{ uri }}
@@ -127,18 +272,20 @@ const DyuArtCafeScreen = () => {
           </ScrollView>
 
           {/* Badges and Pagination - Inside the carousel layer so they go behind content */}
-          <View style={styles.carouselOverlay} pointerEvents="none">
+          <View style={[styles.carouselOverlay, { pointerEvents: 'none' }]}>
             <View style={styles.badgesContainer}>
               <View style={styles.statusBadge}>
-                <View style={styles.statusDot} />
-                <Text style={styles.statusText}>Open now</Text>
+                <View style={[styles.statusDot, { backgroundColor: Number(cafe.is_open) === 1 ? '#4CAF50' : '#999' }]} />
+                <Text style={[styles.statusText, { color: Number(cafe.is_open) === 1 ? '#4CAF50' : '#666' }]}>
+                  {Number(cafe.is_open) === 1 ? 'Open now' : 'Closed'}
+                </Text>
               </View>
               <View style={styles.timeBadge}>
-                <View style={styles.timeBadgeRow}><AppIcon name="time" size={12} color="#fff" /><Text style={styles.timeText}>09:00 AM - 11:00 PM</Text></View>
+                <View style={styles.timeBadgeRow}><AppIcon name="time" size={12} color="#fff" /><Text style={styles.timeText}>{hoursLabel}</Text></View>
               </View>
             </View>
             <View style={styles.pagination}>
-              {IMAGES.map((_, i) => (
+              {slides.map((_, i) => (
                 <View 
                   key={i} 
                   style={[
@@ -153,125 +300,230 @@ const DyuArtCafeScreen = () => {
 
         {/* Details Container - Overlaps Carousel on Scroll */}
         <View style={styles.detailsContainer}>
-          {/* Title & Heart */}
+          {/* 1. Title Row */}
           <View style={styles.titleRow}>
-            <Text style={styles.title}>Dyu Art Café</Text>
-            <TouchableOpacity>
-              <AppIcon name="date" size={28} color="#C8382A" />
-            </TouchableOpacity>
+            <Text style={styles.title}>{cafeName}</Text>
+            <View style={styles.specialtyBadge}>
+              <Text style={styles.specialtyText}>🌿 Specialty</Text>
+            </View>
           </View>
 
-
-          {/* Rating & Price */}
+          {/* 2. Rating Row */}
           <View style={styles.ratingRow}>
-            <View style={styles.starsRow}>{[0, 1, 2, 3, 4].map(i => <AppIcon key={i} name="popular" size={13} color="#F4A300" fill="#F4A300" />)}</View>
-            <Text style={styles.ratingText}>4.8 <Text style={styles.reviewCount}>(521 reviews)</Text></Text>
-            <Text style={styles.price}>₹₹<Text style={styles.priceLight}>₹₹</Text></Text>
+            <View style={styles.starsRow}>
+              {[1, 2, 3, 4].map(i => <AppIcon key={i} name="popular" size={15} color="#F4A300" fill="#F4A300" />)}
+              <AppIcon name="popular" size={15} color="#F4A300" fill="none" />
+            </View>
+            <Text style={styles.ratingScore}>{ratingVal.toFixed(1)}</Text>
+            <Text style={styles.reviewCount}>({reviewCount} reviews)</Text>
           </View>
 
-          {/* Location */}
-          <View style={styles.locationRow}>
-            <AppIcon name="location" size={16} color="#999" />
-            <Text style={styles.address}>23, 1st Cross Rd, KHB Colony, 5th Block, Koramangala, Bengaluru</Text>
+          {/* 3. Address Card */}
+          <View style={styles.addressCard}>
+            <View style={styles.addressInfo}>
+              <View style={styles.addressRow}>
+                <AppIcon name="location" size={16} color="#C8382A" />
+                <Text style={styles.addressText}>{addressText || 'Address not available'}</Text>
+              </View>
+              <TouchableOpacity 
+                onPress={() => {
+                  navigation.navigate('MainTabs', {
+                    screen: 'MapScreen',
+                    params: { 
+                      cafeId: cafe.id,
+                      latitude: cafe.latitude,
+                      longitude: cafe.longitude,
+                      name: cafe.name
+                    }
+                  });
+                }}
+              >
+                <Text style={styles.mapLinkBtn}>View on map ↗</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.miniGallery}>
+              <Image source={{ uri: slides[0] }} style={styles.miniImg} />
+              <View style={styles.photoCountOverlay}>
+                <Text style={styles.photoCountText}>{slides.length}+ Photos</Text>
+              </View>
+            </View>
           </View>
-          <TouchableOpacity>
-             <View style={styles.mapLinkRow}><Text style={styles.mapLink}>View on map</Text><AppIcon name="→" size={13} color="#8B5E3C" /></View>
-          </TouchableOpacity>
 
-          {/* Amenities */}
-          <View style={styles.amenitiesRow}>
-            <View style={styles.amenityItem}><AppIcon name="wifi" size={13} color="#555" /><Text style={styles.amenityText}>Free Wi-Fi</Text></View>
-            <View style={styles.verticalDivider} />
-            <View style={styles.amenityItem}><AppIcon name="time" size={13} color="#555" /><Text style={styles.amenityText}>12 min</Text></View>
+          {/* 4. Quick Stats Pills */}
+          <View style={styles.quickStatsRow}>
+            <View style={styles.statPill}>
+              <AppIcon name="wifi" size={16} color="#888" />
+              <Text style={styles.statPillText}>Free Wi-Fi</Text>
+            </View>
+            <View style={styles.statPill}>
+              <AppIcon name="time" size={16} color="#888" />
+              <Text style={styles.statPillText}>{cafe.prep_time_minutes || 10} min prep</Text>
+            </View>
+            <View style={styles.statPill}>
+              <AppIcon name="coffee" size={16} color="#888" />
+              <Text style={styles.statPillText}>Spec. Beans</Text>
+            </View>
           </View>
 
-          <View style={styles.horizontalDivider} />
+          {/* 5. About Section */}
+          <View style={styles.divider} />
+          <Text style={styles.sectionTitleAbout}>About {cafeName}</Text>
+          <View style={styles.aboutRow}>
+            <View style={styles.aboutIconCircle}>
+              <AppIcon name="coffee" size={20} color="#8B5E3C" />
+            </View>
+            <View style={styles.aboutContentRight}>
+              <Text style={styles.aboutBodyText}>
+                {cafe.description?.trim() || 'Specialty coffee roasters serving single-origin brews in a modern industrial space.'}
+              </Text>
+            </View>
+          </View>
 
-          {/* About Section */}
-          <Text style={styles.sectionTitle}>About</Text>
-          <View style={styles.aboutContent}>
-            <Text style={styles.aboutText}>
-              A bohemian art café with rotating art exhibitions, board games, and exceptional pour-overs.
-            </Text>
-            <View style={styles.aboutImages}>
-              <Image source={{ uri: 'https://images.unsplash.com/photo-1525610553991-2bede1a236e2?w=400&auto=format&fit=crop' }} style={styles.aboutImageLarge} />
-              <View style={styles.aboutImageSmallContainer}>
-                <Image source={{ uri: 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=400&auto=format&fit=crop' }} style={styles.aboutImageSmall} />
-                <View style={styles.imageOverlay}>
-                  <Text style={styles.overlayText}>+12</Text>
+          {/* 6. Perfect For Section */}
+          <View style={styles.sectionHeaderCompact}>
+            <Text style={styles.sectionTitleEmoji}>✨</Text>
+            <Text style={styles.sectionTitleMain}>Perfect for</Text>
+          </View>
+          <View style={styles.perfectForRow}>
+            <View style={[styles.perfectCard, { backgroundColor: '#FFCCAA' }]}>
+              <AppIcon name="work" size={20} color="#C87941" />
+              <Text style={[styles.perfectText, { color: '#C87941' }]}>Work</Text>
+            </View>
+            <View style={[styles.perfectCard, { backgroundColor: '#D0C5FF' }]}>
+              <AppIcon name="date" size={20} color="#7B5FD4" />
+              <Text style={[styles.perfectText, { color: '#7B5FD4' }]}>Date</Text>
+            </View>
+            <View style={[styles.perfectCard, { backgroundColor: '#BAEBC3' }]}>
+              <AppIcon name="vegan" size={20} color="#2E7D45" />
+              <Text style={[styles.perfectText, { color: '#2E7D45' }]}>Chill</Text>
+            </View>
+          </View>
+
+          {/* 7. More Reasons (Tags) */}
+          <View style={styles.moreReasonsHeader}>
+            <AppIcon name="date" size={15} color="#888" />
+            <Text style={styles.moreReasonsTitle}>More reasons to love it</Text>
+          </View>
+          <View style={styles.tagsContainer}>
+            {['Art space', 'Board games', 'Vegan options', 'Instagrammable'].map(tag => (
+              <View key={tag} style={styles.outlineTag}>
+                <AppIcon name="popular" size={12} color="#888" />
+                <Text style={styles.outlineTagText}>{tag}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* 8. Reviews Section */}
+          <View style={styles.divider} />
+          <View style={styles.reviewsHeaderRow}>
+            <Text style={styles.sectionTitleMain}>Reviews</Text>
+            <View style={styles.reviewsActionRow}>
+              <TouchableOpacity onPress={() => setReviewModalVisible(true)} style={styles.writeReviewBtn}>
+                <Text style={styles.writeReviewBtnText}>Write a review</Text>
+              </TouchableOpacity>
+              <TouchableOpacity>
+                <Text style={styles.seeAllBtn}>See all ↗</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {reviews.length === 0 ? (
+            <Text style={styles.emptyReviewsText}>No reviews yet. Be the first after your visit.</Text>
+          ) : (
+            reviews.map((r) => (
+              <View key={r.id} style={styles.newReviewCard}>
+                <View style={styles.reviewTopRow}>
+                  <View style={[styles.newAvatar, { backgroundColor: r.user_name?.startsWith('P') ? '#D4537E' : '#534AB7' }]}>
+                    <Text style={styles.newAvatarText}>{(r.user_name || '?').charAt(0).toUpperCase()}</Text>
+                  </View>
+                  <View style={styles.reviewMeta}>
+                    <Text style={styles.newReviewerName}>{r.user_name || 'Guest'}</Text>
+                    <Text style={styles.newReviewDate}>
+                      {r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}
+                    </Text>
+                  </View>
+                  <Text style={styles.newReviewStars}>{Number(r.rating).toFixed(1)} ★</Text>
                 </View>
+                <Text style={styles.newReviewBody}>{r.comment}</Text>
               </View>
-            </View>
-          </View>
+            ))
+          )}
 
-          <View style={styles.horizontalDivider} />
-
-          {/* Perfect For Section */}
-          <Text style={styles.sectionTitle}>Perfect for</Text>
-          
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagsScroll}>
-            <View style={[styles.tag, { backgroundColor: '#FFF0E5' }]}>
-              <Text style={[styles.tagText, { color: '#E88B4A' }]}>Art</Text>
-            </View>
-            <View style={[styles.tag, { backgroundColor: '#FFF0E5' }]}>
-              <Text style={[styles.tagText, { color: '#E88B4A' }]}>Creative</Text>
-            </View>
-            <View style={[styles.tag, { backgroundColor: '#F0EEFF' }]}>
-              <Text style={[styles.tagText, { color: '#907CFF' }]}>Chill</Text>
-            </View>
-            <View style={[styles.tag, { backgroundColor: '#FBEBFA' }]}>
-              <Text style={[styles.tagText, { color: '#D973C5' }]}>Date</Text>
-            </View>
-          </ScrollView>
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll}>
-            <View style={styles.chip}><AppIcon name="🎨" size={13} color="#555" /><Text style={styles.chipText}>Art space</Text></View>
-            <View style={styles.chip}><AppIcon name="🎲" size={13} color="#555" /><Text style={styles.chipText}>Board games</Text></View>
-            <View style={styles.chip}><AppIcon name="vegan" size={13} color="#555" /><Text style={styles.chipText}>Vegan options</Text></View>
-            <View style={styles.chip}><AppIcon name="photo" size={13} color="#555" /><Text style={styles.chipText}>Instagrammable</Text></View>
-          </ScrollView>
-
-          <View style={styles.horizontalDivider} />
-
-          {/* Reviews Section */}
-          <View style={styles.reviewHeader}>
-            <Text style={styles.sectionTitle}>Reviews</Text>
-            <TouchableOpacity>
-              <View style={styles.seeAllRow}><Text style={styles.seeAll}>See all</Text><AppIcon name="→" size={13} color="#8B5E3C" /></View>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.reviewCard}>
-            <View style={styles.reviewTop}>
-              <View style={styles.avatar}><Text style={styles.avatarText}>P</Text></View>
-              <View style={styles.reviewerInfo}>
-                <Text style={styles.reviewerName}>Priya Nair</Text>
-                <Text style={styles.reviewDate}>2 weeks ago</Text>
-              </View>
-              <View style={styles.reviewRatingBox}>
-                <View style={styles.starsRow}>{[0, 1, 2, 3, 4].map(i => <AppIcon key={i} name="popular" size={10} color="#F4A300" fill="#F4A300" />)}</View>
-                <Text style={styles.reviewScore}>5.0</Text>
-              </View>
-            </View>
-            <Text style={styles.reviewBody}>
-              Amazing ambience, super friendly staff and the pour-over was one of the best I've had in Bangalore!
-            </Text>
-          </View>
-          
           <View style={{ height: 120 }} />
-
         </View>
       </Animated.ScrollView>
 
       {/* Bottom Action Bar */}
       <View style={styles.bottomBar}>
         <TouchableOpacity style={styles.btnOutline} onPress={handleReserve}>
-          <View style={styles.actionBtnContent}><AppIcon name="reservation" size={16} color="#1A1A1A" /><Text style={styles.btnOutlineText}>Reserve Table</Text></View>
+          <View style={styles.actionBtnContent}><AppIcon name="reservation" size={16} color="#6B3F1F" /><Text style={styles.btnOutlineText}>Reserve Table</Text></View>
         </TouchableOpacity>
         <TouchableOpacity style={styles.btnSolid} onPress={handleOrder}>
           <View style={styles.actionBtnContent}><AppIcon name="coffee" size={16} color="#fff" /><Text style={styles.btnSolidText}>Order Now</Text></View>
         </TouchableOpacity>
       </View>
+
+      {/* Review Modal */}
+      <Modal
+        visible={reviewModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setReviewModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.reviewModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Write a Review</Text>
+              <TouchableOpacity onPress={() => setReviewModalVisible(false)}>
+                <AppIcon name="back" size={20} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.ratingLabel}>Rate your experience</Text>
+            <View style={styles.modalStarsRow}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity
+                  key={star}
+                  onPress={() => setReviewRating(star)}
+                  activeOpacity={0.7}
+                >
+                  <AppIcon
+                    name="star"
+                    size={32}
+                    color={star <= reviewRating ? '#FFD700' : '#E0E0E0'}
+                    fill={star <= reviewRating ? '#FFD700' : 'transparent'}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TextInput
+              style={styles.reviewInput}
+              placeholder="Share your thoughts about this cafe..."
+              placeholderTextColor="#999"
+              multiline
+              numberOfLines={4}
+              value={reviewComment}
+              onChangeText={setReviewComment}
+            />
+
+            <TouchableOpacity 
+              style={[styles.submitReviewBtn, submittingReview && styles.disabledBtn]}
+              onPress={handleSubmitReview}
+              disabled={submittingReview}
+            >
+              {submittingReview ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.submitReviewBtnText}>Post Review</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 };
@@ -280,6 +532,26 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FAFAFA',
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorTitle: {
+    fontSize: 16,
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  errorBack: {
+    backgroundColor: '#7A5240',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  errorBackText: {
+    color: '#fff',
+    fontWeight: '700',
   },
   headerBackground: {
     position: 'absolute',
@@ -391,7 +663,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   detailsContainer: {
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#FAF3E8',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     padding: 20,
@@ -400,230 +672,255 @@ const styles = StyleSheet.create({
   titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: 6,
   },
   title: {
     fontSize: 28,
-    fontWeight: '800',
+    fontFamily: 'Courgette_400Regular',
     color: '#1A1A1A',
+    flex: 1,
+    lineHeight: 34,
+  },
+  specialtyBadge: {
+    backgroundColor: '#EAF7EE',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    marginTop: 4,
+  },
+  specialtyText: {
+    color: '#2E7D45',
+    fontSize: 12,
+    fontWeight: '600',
   },
   ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 14,
+    gap: 6,
+  },
+  starsRow: { flexDirection: 'row', gap: 2 },
+  ratingScore: { fontSize: 14, fontWeight: '700', color: '#1A1A1A' },
+  reviewCount: { fontSize: 13, color: '#666' },
+
+  // Address Card
+  addressCard: {
+    backgroundColor: '#F9F5F0',
+    borderRadius: 14,
+    padding: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
     marginBottom: 16,
   },
-  starsRow: { flexDirection: 'row', alignItems: 'center', gap: 1, marginRight: 8 },
-  ratingText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#333',
+  addressInfo: { flex: 1 },
+  addressRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  addressText: { fontSize: 13, color: '#1A1A1A', lineHeight: 19 },
+  mapLinkBtn: { fontSize: 13, fontWeight: '700', color: '#8B5E3C', marginLeft: 24 },
+  miniGallery: {
+    width: 68,
+    height: 68,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#FFF',
+    position: 'relative',
   },
-  reviewCount: {
-    fontWeight: '400',
-    color: '#666',
+  miniImg: { width: '100%', height: '100%' },
+  photoCountOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingVertical: 2,
+    alignItems: 'center',
   },
-  price: {
-    marginLeft: 'auto',
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#7A5240',
-  },
-  priceLight: {
-    color: '#D3C4BE',
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    marginBottom: 4,
-  },
-  mapLinkRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 26, marginBottom: 16 },
-  address: {
+  photoCountText: { color: '#FFF', fontSize: 10, fontWeight: '600' },
+
+  // Quick Stats
+  quickStatsRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  statPill: {
     flex: 1,
-    fontSize: 15,
-    color: '#4A4A4A',
-    lineHeight: 22,
-  },
-  mapLink: {
-    color: '#7A5240',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  amenitiesRow: {
+    backgroundColor: 'rgba(255,255,255,0.4)',
+    borderRadius: 12,
+    padding: 10,
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  statPillText: { fontSize: 12, color: '#555' },
+
+  divider: { height: 1, backgroundColor: '#EEE', marginVertical: 18 },
+  
+  // About
+  sectionTitleAbout: {
+    fontSize: 17,
+    fontFamily: 'Courgette_400Regular',
+    fontWeight: '700',
+    color: '#8B5E3C',
+    marginBottom: 12,
+  },
+  aboutRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  aboutIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#F9F0E6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  aboutContentRight: { flex: 1 },
+  aboutBodyText: { fontSize: 13, color: '#666', lineHeight: 21, marginBottom: 8 },
+  aboutImgRow: { flexDirection: 'row', gap: 8 },
+  aboutSmallImg: { width: 72, height: 56, borderRadius: 8 },
+
+  // Perfect For
+  sectionHeaderCompact: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  sectionTitleEmoji: { fontSize: 17 },
+  sectionTitleMain: { fontSize: 17, fontFamily: 'Courgette_400Regular', fontWeight: '700', color: '#1A1A1A' },
+  perfectForRow: { flexDirection: 'row', gap: 10, marginBottom: 18 },
+  perfectCard: { flex: 1, borderRadius: 14, paddingVertical: 12, alignItems: 'center' },
+  perfectText: { fontSize: 13, fontWeight: '700', marginTop: 4 },
+
+  // More Reasons
+  moreReasonsHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  moreReasonsTitle: { fontSize: 14, fontWeight: '600', color: '#1A1A1A' },
+  tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  outlineTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 0.5,
+    borderColor: '#DDD',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  outlineTagText: { fontSize: 12, color: '#555' },
+
+  // Reviews
+  reviewsHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  seeAllBtn: { fontSize: 13, fontWeight: '700', color: '#8B5E3C' },
+  newReviewCard: {
+    backgroundColor: 'rgba(255,255,255,0.4)',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+  },
+  reviewTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  newAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  newAvatarText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
+  reviewMeta: { flex: 1 },
+  newReviewerName: { fontSize: 14, fontWeight: '600', color: '#1A1A1A' },
+  newReviewDate: { fontSize: 11, color: '#999' },
+  newReviewStars: { fontSize: 14, fontWeight: '700', color: '#F4A300' },
+  newReviewBody: { fontSize: 13, color: '#666', lineHeight: 21 },
+  emptyReviewsText: { fontSize: 13, color: '#888', textAlign: 'center' },
+  
+  // Review Actions
+  reviewsActionRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  writeReviewBtn: {
+    backgroundColor: '#F9F0E6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E8DDD0',
+  },
+  writeReviewBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#8B5E3C',
+  },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  reviewModalContent: {
+    backgroundColor: '#FAF6F1',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
   },
-  amenityText: {
-    fontSize: 14,
-    color: '#4A4A4A',
-    fontWeight: '500',
-  },
-  amenityItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  verticalDivider: {
-    width: 1,
-    height: 14,
-    backgroundColor: '#DDD',
-    marginHorizontal: 12,
-  },
-  horizontalDivider: {
-    height: 1,
-    backgroundColor: '#EEEEEE',
-    marginVertical: 20,
-  },
-  sectionTitle: {
+  modalTitle: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#1A1A1A',
-    marginBottom: 16,
   },
-  aboutContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  aboutText: {
-    flex: 1,
+  ratingLabel: {
     fontSize: 14,
+    fontWeight: '600',
     color: '#666',
-    lineHeight: 22,
-    paddingRight: 16,
-  },
-  aboutImages: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  aboutImageLarge: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-  },
-  aboutImageSmallContainer: {
-    width: 40,
-    height: 80,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  aboutImageSmall: {
-    width: '100%',
-    height: '100%',
-  },
-  imageOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  overlayText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 12,
-  },
-  tagsScroll: {
-    marginBottom: 16,
-  },
-  tag: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 12,
-  },
-  tagText: {
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  chipsScroll: {
-    marginBottom: 8,
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 12,
-  },
-  chipText: {
-    fontSize: 13,
-    color: '#4A4A4A',
-    fontWeight: '500',
-  },
-  reviewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  seeAll: {
-    color: '#7A5240',
-    fontWeight: '600',
-  },
-  seeAllRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  reviewCard: {
-    backgroundColor: '#FAFAFA',
-    padding: 16,
-    borderRadius: 16,
-  },
-  reviewTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    textAlign: 'center',
     marginBottom: 12,
   },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#C59A7E',
+  modalStarsRow: {
+    flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
+    gap: 12,
+    marginBottom: 24,
   },
-  avatarText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 18,
-  },
-  reviewerInfo: {
-    flex: 1,
-  },
-  reviewerName: {
-    fontSize: 15,
-    fontWeight: '700',
+  reviewInput: {
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: '#E8DDD0',
+    borderRadius: 16,
+    padding: 16,
+    minHeight: 120,
+    fontSize: 14,
     color: '#1A1A1A',
+    textAlignVertical: 'top',
+    marginBottom: 24,
   },
-  reviewDate: {
-    fontSize: 13,
-    color: '#888',
-    marginTop: 2,
+  submitReviewBtn: {
+    backgroundColor: '#6B3F1F',
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+    shadowColor: '#6B3F1F',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  reviewRatingBox: {
-    alignItems: 'flex-end',
+  submitReviewBtnText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
-  reviewScore: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 2,
+  disabledBtn: {
+    opacity: 0.6,
   },
-  reviewBody: {
-    fontSize: 14,
-    color: '#4A4A4A',
-    lineHeight: 22,
-  },
+
   bottomBar: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'white',
+    backgroundColor: '#FAF3E8',
     flexDirection: 'row',
     padding: 16,
     paddingBottom: Platform.OS === 'ios' ? 30 : 16,
     borderTopWidth: 1,
-    borderTopColor: '#EEEEEE',
+    borderTopColor: 'rgba(255, 255, 255, 0.4)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.05,
@@ -633,20 +930,20 @@ const styles = StyleSheet.create({
   btnOutline: {
     flex: 1,
     borderWidth: 1.5,
-    borderColor: '#7A5240',
+    borderColor: '#6B3F1F',
     borderRadius: 12,
     paddingVertical: 14,
     marginRight: 12,
     alignItems: 'center',
   },
   btnOutlineText: {
-    color: '#7A5240',
+    color: '#6B3F1F',
     fontSize: 16,
     fontWeight: '700',
   },
   btnSolid: {
     flex: 1,
-    backgroundColor: '#7A5240',
+    backgroundColor: '#6B3F1F',
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',

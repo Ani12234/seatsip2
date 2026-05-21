@@ -1,0 +1,36 @@
+# SeatSip stack: API + Redis + persistent SQLite volume.
+# Set environment in a .env file next to this compose file or export vars before `docker compose up`.
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DB_PATH: /var/lib/seatsip/seatsip.db
+      REDIS_URL: redis://redis:6379
+      # Required in production — no insecure defaults (generate e.g. openssl rand -hex 32 for each).
+      JWT_ACCESS_SECRET_CURRENT: ${JWT_ACCESS_SECRET_CURRENT}
+      JWT_REFRESH_SECRET_CURRENT: ${JWT_REFRESH_SECRET_CURRENT}
+      # Comma-separated web origins (e.g. https://app.seatsip.in) — required for browser CORS in production.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
+    volumes:
+      - seatsip-data:/var/lib/seatsip
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+volumes:
+  seatsip-data:
+  redis-data:

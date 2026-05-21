@@ -2,19 +2,26 @@
 // Warm coffee-inspired palette with modern minimalism
 
 export const Colors = {
-  // Primary - Rich Espresso Brown
-  primary: '#2C1810',
-  primaryLight: '#4A2C1A',
-  primaryDark: '#1A0F08',
+  // Primary - Dark brown (selected states)
+  primary: '#6B3F1F',
+  primaryLight: '#8D6E63',
+  primaryDark: '#3E2723',
 
-  // Accent - Warm Caramel
-  accent: '#C8956C',
-  accentLight: '#E8B48A',
-  accentDark: '#A0714A',
+  // Accent - Warm Caramel / Light brown
+  accent: '#D4A373',
+  accentLight: '#E6DDD4',
+  accentDark: '#8B5E3C',
 
-  // Secondary - Cream
-  cream: '#F5EFE6',
-  creamDark: '#E8DDD0',
+  // Secondary - Medium brown (borders, icons)
+  secondary: '#8D6E63',
+  
+  // Background - Beige topographic base
+  background: '#E6DDD4',
+  surface: '#FFFFFF',
+  surfaceElevated: '#F5F0EB', // Stepper bg, unselected pill bg
+
+  // Existing SeatSip brand color
+  brand: '#6B3F1F',
 
   // Greens for veg indicator
   vegGreen: '#4CAF50',
@@ -28,13 +35,10 @@ export const Colors = {
   // Neutrals
   white: '#FFFFFF',
   black: '#000000',
-  background: '#FAF8F5',
-  surface: '#FFFFFF',
-  surfaceElevated: '#F5F0EA',
 
   // Text
-  textPrimary: '#1C1008',
-  textSecondary: '#6B5744',
+  textPrimary: '#3E2723', // Almost black-brown
+  textSecondary: '#8D6E63', // Muted brown
   textMuted: '#9E8A7A',
   textInverse: '#FFFFFF',
 
@@ -44,7 +48,7 @@ export const Colors = {
   divider: '#F0EAE0',
 
   // Tab bar
-  tabActive: '#C8956C',
+  tabActive: '#5D4037',
   tabInactive: '#9E8A7A',
 
   // Status

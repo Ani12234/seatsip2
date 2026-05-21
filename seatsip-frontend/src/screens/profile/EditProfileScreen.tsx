@@ -7,10 +7,11 @@ import {
   TouchableOpacity,
   TextInput,
   SafeAreaView,
-  StatusBar,
-  Image,
   Alert,
   ActivityIndicator,
+  ImageBackground,
+  StatusBar,
+  Image,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -65,11 +66,16 @@ export default function EditProfileScreen() {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.85,
+      quality: 0.7,
+      base64: true,
     });
 
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      setForm(prev => ({ ...prev, avatar: result.assets[0].uri }));
+    if (!result.canceled && result.assets?.[0]) {
+      const asset = result.assets[0];
+      const base64Data = asset.base64;
+      const type = asset.mimeType || 'image/jpeg';
+      const avatarValue = `data:${type};base64,${base64Data}`;
+      setForm(prev => ({ ...prev, avatar: avatarValue }));
     }
   };
 
@@ -88,21 +94,36 @@ export default function EditProfileScreen() {
     setIsSaving(true);
     try {
       const { data } = await usersApi.updateProfile(nextProfile);
-      await updateStoredUser(data.data || nextProfile);
-      await refreshUser();
-      navigation.goBack();
-    } catch (e) {
-      await updateStoredUser(nextProfile);
-      Alert.alert('Saved locally', 'Profile photo was saved on this device. It will sync when the server is available.');
-      navigation.goBack();
+      if (data.success) {
+        await updateStoredUser(data.data || nextProfile);
+        await refreshUser();
+        navigation.goBack();
+      } else {
+        throw new Error(data.message || 'Failed to update profile');
+      }
+    } catch (e: any) {
+      console.error('Save profile failed', e);
+      if (e.response?.status === 413) {
+        Alert.alert('Image too large', 'Please choose a smaller photo.');
+      } else {
+        // Fallback to local save for offline support
+        await updateStoredUser(nextProfile);
+        Alert.alert('Saved locally', 'Profile photo was updated on this device. It will sync when the server is available.');
+        navigation.goBack();
+      }
     } finally {
       setIsSaving(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F9F7F4" />
+    <ImageBackground
+      source={require('../../assets/images/app_bg.png')}
+      style={styles.container}
+      resizeMode="cover"
+    >
+      <SafeAreaView style={{ flex: 1, width: '100%' }}>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       
       {/* Header with Back Button */}
       <View style={styles.header}>
@@ -207,14 +228,14 @@ export default function EditProfileScreen() {
         
         <View style={{ height: 40 }} />
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: '#F9F7F4' 
   },
   header: {
     flexDirection: 'row',

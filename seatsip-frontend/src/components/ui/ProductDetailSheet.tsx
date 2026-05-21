@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Animated,
-  Modal,
-  PanResponder,
+  Dimensions,
+  Image,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,18 +15,15 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppIcon from './AppIcon';
 import { useCart } from '../../context/CartContext';
-
-const SIZES = [
-  { id: 'small', label: 'Small', ml: 237, priceOffset: -30, caffeine: 75, scale: 0.72 },
-  { id: 'regular', label: 'Regular', ml: 355, priceOffset: 0, caffeine: 150, scale: 0.88 },
-  { id: 'large', label: 'Large', ml: 473, priceOffset: 50, caffeine: 225, scale: 1 },
-];
+import { useResponsive } from '../../hooks/useResponsive';
+import { Colors, Spacing } from '../../theme';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 
 const MILKS = [
-  { id: 'whole', label: 'Whole\nMilk', icon: '🥛' },
-  { id: 'oat', label: 'Oat\nMilk', icon: '🌾' },
-  { id: 'almond', label: 'Almond\nMilk', icon: '🌰' },
-  { id: 'soy', label: 'Soy\nMilk', icon: '🫘' },
+  { id: 'whole', label: 'Whole Milk', icon: '🥛' },
+  { id: 'oat', label: 'Oat Milk', icon: '🌾' },
+  { id: 'almond', label: 'Almond Milk', icon: '🌰' },
+  { id: 'soy', label: 'Soy Milk', icon: '🫘' },
 ];
 
 type ProductDetailSheetProps = {
@@ -42,8 +40,8 @@ const SteamLine = ({ delay }: { delay: number }) => {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.delay(delay),
-        Animated.timing(anim, { toValue: 1, duration: 1200, useNativeDriver: true }),
-        Animated.timing(anim, { toValue: 0, duration: 0, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 1, duration: 1200, useNativeDriver: false }),
+        Animated.timing(anim, { toValue: 0, duration: 0, useNativeDriver: false }),
       ])
     );
 
@@ -103,30 +101,47 @@ const CupStack = ({ quantity, scale }: { quantity: number; scale: number }) => {
 };
 
 export default function ProductDetailSheet({ visible, item, cafeId, onClose }: ProductDetailSheetProps) {
-  const insets = useSafeAreaInsets();
+  const { insets, bottomSheetHeight, responsive, isSmallPhone, isTablet, width } = useResponsive();
   const { addToCart } = useCart();
-  const [selectedSize, setSelectedSize] = useState(SIZES[1]);
+  const bottomSheetRef = useRef<BottomSheet>(null);
+
+  const [selectedSize, setSelectedSize] = useState<any>(null);
   const [quantity, setQuantity] = useState(1);
   const [selectedMilk, setSelectedMilk] = useState('whole');
   const [adding, setAdding] = useState(false);
 
+  const snapPoints = useMemo(() => ['85%'], []);
+
   useEffect(() => {
-    if (visible) {
-      setSelectedSize(SIZES[1]);
+    if (visible && item) {
+      const defaultSize = item.sizes?.[1] || item.sizes?.[0] || null;
+      setSelectedSize(defaultSize);
       setQuantity(1);
       setSelectedMilk('whole');
       setAdding(false);
+      bottomSheetRef.current?.snapToIndex(0);
+    } else {
+      bottomSheetRef.current?.close();
     }
-  }, [visible, item?.id]);
+  }, [visible, item]);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gestureState) => gestureState.dy > 8,
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy > 70) onClose();
-      },
-    })
-  ).current;
+  const handleSheetChanges = useCallback((index: number) => {
+    if (index === -1) {
+      onClose();
+    }
+  }, [onClose]);
+
+  const renderBackdrop = useCallback(
+    (props: any) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.4}
+      />
+    ),
+    []
+  );
 
   if (!item) return null;
 
@@ -134,9 +149,9 @@ export default function ProductDetailSheet({ visible, item, cafeId, onClose }: P
     ? Number.parseInt(item.price.replace(/[^\d]/g, ''), 10)
     : item.price;
   const basePrice = Number.isFinite(rawPrice) ? rawPrice : 150;
-  const currentPrice = Math.max(50, basePrice + selectedSize.priceOffset);
+  const currentPrice = Math.max(50, basePrice + (selectedSize?.priceModifier || 0));
   const totalPrice = currentPrice * quantity;
-  const totalCaffeine = selectedSize.caffeine * quantity;
+  const totalCaffeine = (item.caffeine || 150) * (selectedSize?.volume / 355 || 1) * quantity;
 
   const handleAddToCart = async () => {
     try {
@@ -150,149 +165,167 @@ export default function ProductDetailSheet({ visible, item, cafeId, onClose }: P
     }
   };
 
+  const sheetWidth = isTablet ? (width - Spacing.md * 3) / 2 : width - Spacing.md * 2;
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.modalRoot}>
-        <TouchableOpacity activeOpacity={1} style={styles.backdrop} onPress={onClose} />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + 14 }]} {...panResponder.panHandlers}>
-          <View style={styles.handle} />
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetScroll}>
-            <View style={styles.hero}>
-              <CupStack quantity={quantity} scale={selectedSize.scale} />
+    <BottomSheet
+      ref={bottomSheetRef}
+      index={visible ? 0 : -1}
+      snapPoints={snapPoints}
+      onChange={handleSheetChanges}
+      enablePanDownToClose
+      detached={true}
+      bottomInset={Spacing.md}
+      backdropComponent={renderBackdrop}
+      handleIndicatorStyle={styles.handleIndicator}
+      backgroundStyle={[
+        styles.sheetBackground,
+        { width: sheetWidth, alignSelf: 'center' }
+      ]}
+      style={{ width: sheetWidth, alignSelf: 'center' }}
+    >
+      <BottomSheetScrollView 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.contentContainer,
+          { paddingBottom: insets.bottom + Spacing.xl }
+        ]}
+      >
+        <View style={styles.hero}>
+          {item.image_url && (
+            <Image 
+              source={typeof item.image_url === 'string' ? { uri: item.image_url } : item.image_url} 
+              style={[StyleSheet.absoluteFill, { opacity: 0.18 }]} 
+              resizeMode="cover"
+            />
+          )}
+          <CupStack quantity={quantity} scale={selectedSize?.name === 'Large' ? 1 : selectedSize?.name === 'Small' ? 0.72 : 0.88} />
+        </View>
+
+        <View style={styles.content}>
+          <View style={styles.topRow}>
+            <View style={styles.popularPill}>
+              <AppIcon name="popular" size={11} color={Colors.brand} fill={Colors.brand} />
+              <Text style={styles.popularText}>{item.is_popular ? 'Popular' : 'Recommended'}</Text>
             </View>
+            <Text style={[styles.price, { fontSize: responsive(18, 20, 22) }]}>₹{totalPrice}</Text>
+          </View>
 
-            <View style={styles.content}>
-              <View style={styles.topRow}>
-                <View style={styles.popularPill}>
-                  <AppIcon name="popular" size={11} color="#C17D2E" fill="#C17D2E" />
-                  <Text style={styles.popularText}>{item.is_popular ? 'Popular' : 'Recommended'}</Text>
-                </View>
-                <Text style={styles.price}>₹{totalPrice}</Text>
-              </View>
+          <Text style={[styles.name, { fontSize: responsive(20, 24, 28) }]}>{item.name}</Text>
+          <Text style={[styles.desc, { fontSize: responsive(11, 12, 13) }]}>
+            {item.description || 'Experience the perfect blend of tradition and craftsmanship. Smooth, bold, and endlessly satisfying.'}
+          </Text>
 
-              <Text style={styles.name}>{item.name}</Text>
-              <Text style={styles.desc}>
-                {item.description || item.desc || 'Experience the perfect blend of tradition and craftsmanship. Smooth, bold, and endlessly satisfying.'}
-              </Text>
+          <View style={styles.caffeinePill}>
+            <AppIcon name="zap" size={13} color={Colors.brand} />
+            <Text style={styles.caffeineText}>
+              <Text style={styles.caffeineStrong}>{totalCaffeine.toFixed(0)} mg</Text> caffeine
+            </Text>
+          </View>
 
-              <View style={styles.caffeinePill}>
-                <AppIcon name="zap" size={15} color="#C17D2E" />
-                <Text style={styles.caffeineText}>
-                  <Text style={styles.caffeineStrong}>{totalCaffeine} mg</Text> caffeine
-                </Text>
-              </View>
+          <View style={styles.divider} />
+          <Text style={styles.sectionLabel}>Size</Text>
+          <View style={styles.sizeRow}>
+            {item.sizes?.map((size: any) => {
+              const selected = selectedSize?.name === size.name;
 
-              <View style={styles.divider} />
-              <Text style={styles.sectionLabel}>Size</Text>
-              <View style={styles.sizeRow}>
-                {SIZES.map((size) => {
-                  const selected = selectedSize.id === size.id;
-
-                  return (
-                    <TouchableOpacity
-                      key={size.id}
-                      style={[styles.sizeCard, selected && styles.optionActive]}
-                      onPress={() => setSelectedSize(size)}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={[styles.sizeLabel, selected && styles.optionActiveText]}>{size.label}</Text>
-                      <Text style={[styles.sizeMeta, selected && styles.optionActiveSubtext]}>{size.ml} ml</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <View style={styles.divider} />
-              <Text style={styles.sectionLabel}>Quantity</Text>
-              <View style={styles.qtyRow}>
-                <TouchableOpacity style={styles.qtyBtn} onPress={() => setQuantity((value) => Math.max(1, value - 1))}>
-                  <Text style={styles.qtyText}>-</Text>
+              return (
+                <TouchableOpacity
+                  key={size.name}
+                  style={[styles.sizeCard, selected && styles.optionActive]}
+                  onPress={() => setSelectedSize(size)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.sizeLabel, selected && styles.optionActiveText]}>{size.name}</Text>
+                  <Text style={[styles.sizeMeta, selected && styles.optionActiveSubtext]}>
+                    {size.volume} {size.unit}
+                  </Text>
                 </TouchableOpacity>
-                <Text style={styles.qtyValue}>{quantity}</Text>
-                <TouchableOpacity style={styles.qtyBtn} onPress={() => setQuantity((value) => Math.min(9, value + 1))}>
-                  <Text style={styles.qtyText}>+</Text>
+              );
+            })}
+          </View>
+
+          <View style={styles.divider} />
+          <Text style={styles.sectionLabel}>Quantity</Text>
+          <View style={styles.qtyRow}>
+            <TouchableOpacity style={styles.qtyBtn} onPress={() => setQuantity((v) => Math.max(1, v - 1))}>
+              <Text style={styles.qtyText}>-</Text>
+            </TouchableOpacity>
+            <Text style={styles.qtyValue}>{quantity}</Text>
+            <TouchableOpacity style={styles.qtyBtn} onPress={() => setQuantity((v) => Math.min(9, v + 1))}>
+              <Text style={styles.qtyText}>+</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.divider} />
+          <Text style={styles.sectionLabel}>Milk Type</Text>
+          <View style={[styles.milkRow, width < 360 && styles.milkRowWrap]}>
+            {MILKS.map((milk) => {
+              const selected = selectedMilk === milk.id;
+
+              return (
+                <TouchableOpacity
+                  key={milk.id}
+                  style={[
+                    styles.milkCard, 
+                    selected && styles.optionActive,
+                    width < 360 && styles.milkCardSmall
+                  ]}
+                  onPress={() => setSelectedMilk(milk.id)}
+                  activeOpacity={0.85}
+                >
+                  <AppIcon name={milk.icon} size={19} color={selected ? Colors.white : Colors.secondary} />
+                  <Text style={[styles.milkLabel, selected && styles.optionActiveText]}>{milk.label}</Text>
                 </TouchableOpacity>
-              </View>
-
-              <View style={styles.divider} />
-              <Text style={styles.sectionLabel}>Milk Type</Text>
-              <View style={styles.milkRow}>
-                {MILKS.map((milk) => {
-                  const selected = selectedMilk === milk.id;
-
-                  return (
-                    <TouchableOpacity
-                      key={milk.id}
-                      style={[styles.milkCard, selected && styles.optionActive]}
-                      onPress={() => setSelectedMilk(milk.id)}
-                      activeOpacity={0.85}
-                    >
-                      <AppIcon name={milk.icon} size={19} color={selected ? '#fff' : '#8B6F5A'} />
-                      <Text style={[styles.milkLabel, selected && styles.optionActiveText]}>{milk.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          </ScrollView>
+              );
+            })}
+          </View>
 
           <TouchableOpacity
-            style={styles.cta}
+            style={[styles.cta, { marginTop: Spacing.lg }]}
             activeOpacity={0.9}
             disabled={adding}
             onPress={handleAddToCart}
           >
             {adding ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={Colors.white} />
             ) : (
               <>
-                <AppIcon name="cart" size={18} color="#fff" />
-                <Text style={styles.ctaText}>Add to Cart - ₹{totalPrice}</Text>
+                <AppIcon name="cart" size={18} color={Colors.white} />
+                <Text style={styles.ctaText}>
+                  {width < 350 ? `Add — ₹${totalPrice}` : `Add to cart — ₹${totalPrice}`}
+                </Text>
               </>
             )}
           </TouchableOpacity>
         </View>
-      </View>
-    </Modal>
+      </BottomSheetScrollView>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  modalRoot: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  sheet: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
-    overflow: 'hidden',
-    maxHeight: '92%',
-  },
-  sheetScroll: {
-    paddingBottom: 8,
-  },
-  handle: {
-    alignSelf: 'center',
+  handleIndicator: {
     width: 44,
     height: 5,
-    borderRadius: 3,
-    backgroundColor: '#D8CDBF',
-    marginTop: 10,
-    marginBottom: 8,
+    backgroundColor: '#E0D8D0',
+  },
+  sheetBackground: {
+    backgroundColor: Colors.white,
+    borderRadius: 26,
+    overflow: 'hidden',
+  },
+  contentContainer: {
+    paddingHorizontal: Spacing.md,
   },
   hero: {
-    height: 185,
-    marginHorizontal: 16,
+    height: 120,
     borderRadius: 22,
     backgroundColor: '#EDE8E1',
     alignItems: 'center',
     justifyContent: 'flex-end',
     overflow: 'hidden',
+    marginTop: Spacing.xs,
   },
   cupStage: {
     alignItems: 'center',
@@ -321,19 +354,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cupWrap: {
-    width: 120,
-    height: 120,
+    width: 90,
+    height: 90,
     alignItems: 'center',
     justifyContent: 'flex-end',
   },
   cup: {
-    width: 74,
-    height: 70,
-    borderWidth: 3,
+    width: 56,
+    height: 54,
+    borderWidth: 2.5,
     borderColor: '#3A2A20',
-    borderRadius: 16,
-    borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26,
+    borderRadius: 12,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
     backgroundColor: '#F8F1E8',
     overflow: 'hidden',
   },
@@ -357,23 +390,23 @@ const styles = StyleSheet.create({
   },
   cupHandle: {
     position: 'absolute',
-    right: 10,
-    bottom: 28,
-    width: 25,
-    height: 31,
-    borderWidth: 3,
+    right: 8,
+    bottom: 22,
+    width: 20,
+    height: 24,
+    borderWidth: 2.5,
     borderLeftWidth: 0,
     borderColor: '#3A2A20',
-    borderRadius: 14,
+    borderRadius: 10,
   },
   saucer: {
-    width: 88,
-    height: 12,
-    borderRadius: 12,
-    borderWidth: 2,
+    width: 68,
+    height: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
     borderColor: '#B9A38E',
     backgroundColor: '#E0D5C8',
-    marginTop: 8,
+    marginTop: 6,
   },
   extraBadge: {
     width: 30,
@@ -391,23 +424,22 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   content: {
-    marginTop: 12,
-    marginHorizontal: 16,
-    padding: 16,
-    borderRadius: 24,
-    backgroundColor: '#fff',
+    marginTop: Spacing.sm,
+    padding: Spacing.sm,
+    borderRadius: 20,
+    backgroundColor: Colors.white,
   },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
   },
   popularPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#FFF3E2',
+    backgroundColor: '#F5F0E6',
     borderRadius: 14,
     paddingHorizontal: 9,
     paddingVertical: 5,
@@ -418,20 +450,17 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   price: {
-    color: '#1A0F05',
-    fontSize: 20,
+    color: Colors.textPrimary,
     fontWeight: '900',
   },
   name: {
-    color: '#1A0F05',
-    fontSize: 27,
+    color: Colors.textPrimary,
     fontWeight: '900',
     letterSpacing: 0,
     marginBottom: 5,
   },
   desc: {
-    color: '#7C6757',
-    fontSize: 13,
+    color: Colors.textSecondary,
     lineHeight: 19,
     marginBottom: 12,
   },
@@ -440,7 +469,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#FFF3E2',
+    backgroundColor: '#F5F0E6',
     borderRadius: 14,
     paddingHorizontal: 11,
     paddingVertical: 7,
@@ -450,7 +479,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   caffeineStrong: {
-    color: '#C17D2E',
+    color: Colors.brand,
     fontWeight: '900',
   },
   divider: {
@@ -459,7 +488,7 @@ const styles = StyleSheet.create({
     marginVertical: 13,
   },
   sectionLabel: {
-    color: '#1A0F05',
+    color: Colors.textPrimary,
     fontSize: 14,
     fontWeight: '900',
     marginBottom: 8,
@@ -467,6 +496,8 @@ const styles = StyleSheet.create({
   sizeRow: {
     flexDirection: 'row',
     gap: 8,
+    width: '100%',
+    flexWrap: 'wrap',
   },
   sizeCard: {
     flex: 1,
@@ -479,87 +510,94 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   optionActive: {
-    backgroundColor: '#2C1A0E',
-    borderColor: '#2C1A0E',
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
   optionActiveText: {
-    color: '#fff',
+    color: Colors.white,
   },
   optionActiveSubtext: {
     color: 'rgba(255,255,255,0.75)',
   },
   sizeLabel: {
-    color: '#3D2010',
+    color: Colors.textPrimary,
     fontSize: 13,
     fontWeight: '900',
     marginBottom: 3,
   },
   sizeMeta: {
-    color: '#8B6F5A',
+    color: Colors.textSecondary,
     fontSize: 11,
   },
   qtyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0EBE3',
-    borderRadius: 22,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    height: 48,
   },
   qtyBtn: {
     flex: 1,
-    height: 42,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
   qtyText: {
-    color: '#6B3F1A',
+    color: Colors.primary,
     fontSize: 24,
     fontWeight: '800',
   },
   qtyValue: {
-    flex: 0.8,
-    color: '#1A0F05',
-    fontSize: 22,
+    width: 40,
+    color: Colors.textPrimary,
+    fontSize: 18,
     fontWeight: '900',
     textAlign: 'center',
   },
   milkRow: {
     flexDirection: 'row',
     gap: 8,
+    width: '100%',
+    flexWrap: 'wrap',
+  },
+  milkRowWrap: {
+    flexWrap: 'wrap',
   },
   milkCard: {
     flex: 1,
-    minHeight: 76,
+    minHeight: 64,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    borderRadius: 16,
+    gap: 4,
+    borderRadius: 14,
     borderWidth: 1.5,
     borderColor: '#D8CDBF',
     backgroundColor: '#FAF7F2',
     paddingHorizontal: 6,
   },
+  milkCardSmall: {
+    flex: 0,
+    width: '48%',
+    minHeight: 60,
+  },
   milkLabel: {
-    color: '#8B6F5A',
+    color: Colors.textSecondary,
     fontSize: 10,
     fontWeight: '800',
     textAlign: 'center',
     lineHeight: 13,
   },
   cta: {
-    marginHorizontal: 16,
-    marginTop: 8,
     minHeight: 54,
     borderRadius: 27,
-    backgroundColor: '#2C1A0E',
+    backgroundColor: Colors.brand,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 9,
   },
   ctaText: {
-    color: '#fff',
+    color: Colors.white,
     fontSize: 16,
     fontWeight: '900',
     letterSpacing: 0.2,

@@ -3,19 +3,20 @@ export type RootStackParamList = {
   Onboarding: undefined;
   Login: undefined;
   Register: undefined;
+  ForgotPassword: undefined;
 
   // Main tabs
   MainTabs: undefined;
 
   // Discovery
   CafeDetail: { cafeId: string };
+  CafeGallery: { cafeId: string; cafeName: string };
   Menu: { cafeId: string; cafeName: string };
-  CafeGallery: { cafeId: string; cafeName: string; images: string[] };
 
   // Reservation flow
   TableSelect: { cafeId: string; cafeName: string };
-  ReservationDetails: { cafeId: string; cafeName: string; tableId?: string };
-  PreOrderMenu: { cafeId: string; cafeName: string; reservationData: any };
+  ReservationDetails: { cafeId: string; cafeName: string; tableId?: string; cafeAddress?: string };
+  PreOrderMenu: { cafeId: string; cafeName: string; reservationData: any; reservationId?: string };
   BookingConfirmed: { reservation: any };
 
   // Order flow
@@ -39,11 +40,18 @@ export type RootStackParamList = {
   Discover: undefined;
   HelpCenter: undefined;
   Terms: undefined;
+  PrivacyPolicy: undefined;
+  SupportChat: undefined;
+  CafeList: { title: string; filter?: string };
+  PopularItems: undefined;
+  AllRewards: undefined;
+  ChangePassword: undefined;
+  LanguageSelect: undefined;
 };
 
 export type TabParamList = {
   Home: undefined;
-  MapScreen: undefined;
+  MapScreen: { cafeId?: string; cafeName?: string; lat?: number; lng?: number };
   ExploreTab: undefined;
   Profile: undefined;
   Rewards: undefined;

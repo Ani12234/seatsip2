@@ -8,8 +8,14 @@ import {
   TextInput,
   SafeAreaView,
   StatusBar,
+  Linking,
+  Alert,
+  ImageBackground,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../navigation/types';
+import { BRAND } from '../../constants/brand';
 import AppIcon from '../../components/ui/AppIcon';
 
 // ── Tiny helpers ──────────────────────────────────────────────────────────────
@@ -43,30 +49,103 @@ const TopicCard = ({ emoji, bg, title, subtitle, chevronBg, chevronColor, onPres
 
 // ── FAQ Row ───────────────────────────────────────────────────────────────────
 
-const FaqRow = ({ emoji, question, onPress }: { emoji: string; question: string; onPress: () => void }) => (
-  <TouchableOpacity style={styles.faqRow} onPress={onPress} activeOpacity={0.7}>
-    <View style={styles.faqIcon}>
-      <AppIcon name={emoji} size={18} color="#4A3728" />
-    </View>
-    <Text style={styles.faqText}>{question}</Text>
-    <AppIcon name="›" size={18} color="#C2B6A8" />
-  </TouchableOpacity>
+const FaqRow = ({ emoji, question, answer, isExpanded, onToggle }: { 
+  emoji: string; 
+  question: string; 
+  answer: string;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) => (
+  <View>
+    <TouchableOpacity 
+      style={styles.faqRow} 
+      onPress={onToggle} 
+      activeOpacity={0.7}
+    >
+      <View style={styles.faqIcon}>
+        <AppIcon name={emoji} size={18} color="#4A3728" />
+      </View>
+      <Text style={styles.faqText}>{question}</Text>
+      <AppIcon 
+        name="›" 
+        size={18} 
+        color="#C2B6A8" 
+        style={isExpanded ? { transform: [{ rotate: '90deg' }] } : {}}
+      />
+    </TouchableOpacity>
+    {isExpanded && (
+      <View style={styles.faqAnswerContainer}>
+        <Text style={styles.faqAnswerText}>{answer}</Text>
+      </View>
+    )}
+  </View>
 );
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
 export default function HelpCenterScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [search, setSearch] = useState('');
+  const [expandedFaq, setExpandedFaq] = useState<string | null>(null);
+
+  const FAQ_DATA = [
+    {
+      id: 'track',
+      emoji: 'receipt',
+      question: 'How do I track my order?',
+      answer: 'Open Profile → My Orders, or go to Order History from your profile. Tap an order to see its live status and estimated ready time.'
+    },
+    {
+      id: 'cancel',
+      emoji: 'calendar',
+      question: 'How do I cancel a reservation?',
+      answer: 'Go to your Reservation History, select the booking you wish to cancel, and tap "Cancel Reservation". Please note that cancellation policies vary by venue.'
+    },
+    {
+      id: 'points',
+      emoji: 'points',
+      question: 'How do I redeem points?',
+      answer: 'Points are earned automatically on every order. You can view your balance in the Rewards section and redeem them for discounts or free items when available.'
+    },
+    {
+      id: 'payments',
+      emoji: 'card',
+      question: 'What payment methods are accepted?',
+      answer: 'We accept all major credit/debit cards, UPI, and net banking through Razorpay. You can also use your Wallet for faster checkouts.'
+    }
+  ];
+
+  const openSupportEmail = () => {
+    const q = encodeURIComponent(`${BRAND.name} support request`);
+    void Linking.openURL(`mailto:${BRAND.supportEmail}?subject=${q}`);
+  };
+
+  const openWhatsApp = () => {
+    const text = encodeURIComponent(`Hi ${BRAND.name} support — I need help with the app.`);
+    void Linking.openURL(`https://wa.me/${BRAND.supportPhoneWa}?text=${text}`);
+  };
+
+  const openContactSheet = () => {
+    Alert.alert('Contact support', 'How would you like to reach us?', [
+      { text: 'Email', onPress: () => void openSupportEmail() },
+      { text: 'WhatsApp', onPress: () => void openWhatsApp() },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8F4EF" />
-      <ScrollView
-        style={styles.container}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 32 }}
-      >
+    <ImageBackground
+      source={require('../../assets/images/app_bg.png')}
+      style={styles.safe}
+      resizeMode="cover"
+    >
+      <SafeAreaView style={{ flex: 1, width: '100%' }}>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+        <ScrollView
+          style={styles.container}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 32 }}
+        >
         {/* ── Header ── */}
         <View style={styles.header}>
           <TouchableOpacity
@@ -97,7 +176,7 @@ export default function HelpCenterScreen() {
         {/* ── Popular Topics ── */}
         <View style={styles.sectionRow}>
           <Text style={styles.sectionTitle}>Popular Topics</Text>
-          <TouchableOpacity activeOpacity={0.7}>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Discover')}>
             <View style={styles.viewAllRow}><Text style={styles.viewAll}>View all</Text><AppIcon name="›" size={16} color="#8B6F47" /></View>
           </TouchableOpacity>
         </View>
@@ -110,7 +189,7 @@ export default function HelpCenterScreen() {
             subtitle={"Track, cancel or\nmanage your orders"}
             chevronBg="#F0EDE8"
             chevronColor="#555"
-            onPress={() => {}}
+            onPress={() => navigation.navigate('OrderHistory')}
           />
           <TopicCard
             emoji="💳"
@@ -119,7 +198,7 @@ export default function HelpCenterScreen() {
             subtitle={"Payment methods,\nrefunds & wallets"}
             chevronBg="#F0EDE8"
             chevronColor="#555"
-            onPress={() => {}}
+            onPress={() => navigation.navigate('WalletScreen')}
           />
           <TopicCard
             emoji="📅"
@@ -128,7 +207,7 @@ export default function HelpCenterScreen() {
             subtitle={"Table bookings,\nchanges & cancellations"}
             chevronBg="#FCDCDC"
             chevronColor="#E05050"
-            onPress={() => {}}
+            onPress={() => navigation.navigate('ReservationHistory')}
           />
           <TopicCard
             emoji="👤"
@@ -137,26 +216,31 @@ export default function HelpCenterScreen() {
             subtitle={"Profile settings,\nprivacy & security"}
             chevronBg="#DDE8F4"
             chevronColor="#4A7CC7"
-            onPress={() => {}}
+            onPress={() => navigation.navigate('Settings')}
           />
         </View>
 
         {/* ── FAQs ── */}
         <View style={[styles.sectionRow, { marginTop: 8 }]}>
           <Text style={styles.sectionTitle}>FAQs</Text>
-          <TouchableOpacity activeOpacity={0.7}>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Terms')}>
             <View style={styles.viewAllRow}><Text style={styles.viewAll}>View all</Text><AppIcon name="›" size={16} color="#8B6F47" /></View>
           </TouchableOpacity>
         </View>
 
         <View style={styles.faqCard}>
-          <FaqRow emoji="🧾" question="How do I track my order?" onPress={() => {}} />
-          <View style={styles.faqDivider} />
-          <FaqRow emoji="📆" question="How do I cancel a reservation?" onPress={() => {}} />
-          <View style={styles.faqDivider} />
-          <FaqRow emoji="⭐" question="How do I redeem points?" onPress={() => {}} />
-          <View style={styles.faqDivider} />
-          <FaqRow emoji="💰" question="What payment methods are accepted?" onPress={() => {}} />
+          {FAQ_DATA.map((item, index) => (
+            <View key={item.id}>
+              <FaqRow
+                emoji={item.emoji}
+                question={item.question}
+                answer={item.answer}
+                isExpanded={expandedFaq === item.id}
+                onToggle={() => setExpandedFaq(expandedFaq === item.id ? null : item.id)}
+              />
+              {index < FAQ_DATA.length - 1 && <View style={styles.faqDivider} />}
+            </View>
+          ))}
         </View>
 
         {/* ── Still need help? ── */}
@@ -173,14 +257,15 @@ export default function HelpCenterScreen() {
             <Text style={styles.supportSubtitle}>
               Our support team is available 24/7{'\n'}to assist you.
             </Text>
-            <TouchableOpacity style={styles.contactBtn} activeOpacity={0.85} onPress={() => {}}>
+            <TouchableOpacity style={styles.contactBtn} activeOpacity={0.85} onPress={() => navigation.navigate('SupportChat')}>
               <Text style={styles.contactBtnText}>Contact Support</Text>
               <AppIcon name="›" size={16} color="#fff" />
             </TouchableOpacity>
           </View>
         </View>
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
@@ -189,11 +274,9 @@ export default function HelpCenterScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#F8F4EF',
   },
   container: {
     flex: 1,
-    backgroundColor: '#F8F4EF',
   },
 
   // Header
@@ -377,6 +460,17 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: '#F0EAE2',
     marginLeft: 68,
+  },
+  faqAnswerContainer: {
+    paddingLeft: 68,
+    paddingRight: 20,
+    paddingBottom: 16,
+    marginTop: -4,
+  },
+  faqAnswerText: {
+    fontSize: 13,
+    color: '#8A7060',
+    lineHeight: 18,
   },
 
   // Support card

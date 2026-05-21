@@ -9,6 +9,7 @@ import {
   SafeAreaView,
   StatusBar,
   Image,
+  ImageBackground
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -18,39 +19,39 @@ import AppIcon from '../../components/ui/AppIcon';
 const MENU_CARDS = [
   {
     id: '1',
-    title: 'Main Menu',
-    description: 'A wide variety of meals to satisfy every craving.',
-    time: '48 mins',
+    title: 'Matcha Moments',
+    description: 'Smooth, earthy matcha creations crafted for a refreshing and calming experience.',
+    time: 'Premium',
     timeColor: '#2D6A4F',
     timeBg: '#D8F3DC',
-    image: 'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=800&q=80',
+    image: require('../../assets/images/explore/matcha_1.png'),
   },
   {
     id: '2',
-    title: 'Express Menu',
-    description: 'Quick bites and favorites, delivered in no time.',
-    time: '2 hrs',
+    title: 'Sweet Cravings',
+    description: 'Decadent desserts, fluffy waffles, creamy cakes, and treats made to satisfy every craving.',
+    time: 'Sweet',
     timeColor: '#7B4F00',
     timeBg: '#FFE8A3',
-    image: 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=800&q=80',
+    image: require('../../assets/images/explore/sweets.png'),
   },
   {
     id: '3',
-    title: 'Custom Cakes',
-    description: 'Beautiful, delicious cakes made just for you.',
-    time: '72 hrs',
-    timeColor: '#4A1A7A',
-    timeBg: '#E0C3FC',
-    image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=800&q=80',
+    title: 'Brew Bar',
+    description: 'Freshly brewed coffees, iced blends, and handcrafted café favorites for every mood.',
+    time: 'Classic',
+    timeColor: '#7A1A00',
+    timeBg: '#FFD6CC',
+    image: require('../../assets/images/explore/brew.png'),
   },
   {
     id: '4',
-    title: 'Hot Pies',
-    description: 'Warm, crispy & packed with flavor. Perfect anytime!',
-    time: '3 hrs',
-    timeColor: '#7A1A00',
-    timeBg: '#FFD6CC',
-    image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800&q=80',
+    title: 'Matcha Moments',
+    description: 'Smooth, earthy matcha creations crafted for a refreshing and calming experience.',
+    time: 'Earthy',
+    timeColor: '#2D6A4F',
+    timeBg: '#D8F3DC',
+    image: require('../../assets/images/explore/matcha_2.png'),
   },
 ];
 
@@ -61,14 +62,14 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 const MenuCard = ({ item, onPress }: { item: any, onPress: () => void }) => (
   <TouchableOpacity style={styles.card} activeOpacity={0.9} onPress={onPress}>
     <Image
-      source={{ uri: item.image }}
+      source={item.image}
       style={styles.cardImage}
       resizeMode="cover"
     />
     <View style={styles.cardOverlay} />
 
     <View style={[styles.timeBadge, { backgroundColor: item.timeBg }]}>
-      <AppIcon name="time" size={12} color={item.timeColor} />
+      <AppIcon name="popular" size={12} color={item.timeColor} />
       <Text style={[styles.timeText, { color: item.timeColor }]}>{item.time}</Text>
     </View>
 
@@ -89,77 +90,69 @@ export default function ExploreScreen() {
   const [searchText, setSearchText] = useState('');
 
   const handleCardPress = (title: string) => {
-    navigation.navigate('Menu', { 
-      cafeId: title.toLowerCase().replace(' ', '_'), 
-      cafeName: title 
+    navigation.navigate('CafeList', { 
+      title: title,
+      filter: title.toLowerCase().replace(' ', '_')
     });
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
+    <ImageBackground 
+      source={require('../../assets/images/app_bg.png')} 
+      style={styles.container}
+      resizeMode="cover"
+    >
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" />
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── Header ── */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.headerTitle}>Explore</Text>
-            <Text style={styles.headerSub}>Discover delicious food, delivered fast</Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.bellBtn} 
-            activeOpacity={0.8}
-            onPress={() => navigation.navigate('NotificationsScreen')}
-          >
-            <AppIcon name="notification" size={18} color="#1A1A1A" />
-          </TouchableOpacity>
-        </View>
-
-        {/* ── Search Bar ── */}
-        <View style={styles.searchBar}>
-          <AppIcon name="search" size={16} color="#888" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search the full catalog"
-            placeholderTextColor="#AAAAAA"
-            value={searchText}
-            onChangeText={setSearchText}
-          />
-          <TouchableOpacity>
-            <AppIcon name="filter" size={18} color="#555" />
-          </TouchableOpacity>
-        </View>
-
-        {/* ── Menu Cards ── */}
-        <View style={styles.cardList}>
-          {MENU_CARDS.map((item) => (
-            <MenuCard 
-              key={item.id} 
-              item={item} 
-              onPress={() => handleCardPress(item.title)}
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ── Search Bar ── */}
+          <View style={styles.searchBar}>
+            <AppIcon name="search" size={16} color="#888" style={styles.searchIcon} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search the full catalog"
+              placeholderTextColor="#AAAAAA"
+              value={searchText}
+              onChangeText={setSearchText}
             />
-          ))}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+            <TouchableOpacity>
+              <AppIcon name="filter" size={18} color="#555" />
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Menu Cards ── */}
+          <View style={styles.cardList}>
+            {MENU_CARDS.map((item) => (
+              <MenuCard 
+                key={item.id} 
+                item={item} 
+                onPress={() => handleCardPress(item.title)}
+              />
+            ))}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  container: { flex: 1, width: '100%' },
   safeArea: {
     flex: 1,
-    backgroundColor: '#F5F0EB',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
+    paddingTop: 20,
     paddingBottom: 100,
   },
 
@@ -242,6 +235,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 12,
     position: 'relative',
+    backgroundColor: '#FAF3E8',
   },
   cardImage: {
     position: 'absolute',

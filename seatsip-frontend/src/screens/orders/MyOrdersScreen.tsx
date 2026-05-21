@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,11 +8,16 @@ import {
   SafeAreaView,
   StatusBar,
   Image,
+  ActivityIndicator,
+  RefreshControl,
+  ImageBackground,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/types';
 import AppIcon from '../../components/ui/AppIcon';
+import { ordersApi } from '../../services/api';
+import { Order } from '../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BROWN = '#2C1A0E';
@@ -20,58 +25,51 @@ const ACCENT = '#8B5E3C';
 const BG = '#F5F0EB';
 
 const FILTERS = [
-  { id: 'all',       label: 'All Orders',  icon: '🛍' },
-  { id: 'delivered', label: 'Delivered',   icon: '✅' },
-  { id: 'cancelled', label: 'Cancelled',   icon: '❌' },
-  { id: 'reordered', label: 'Reordered',   icon: '🔄' },
+  { id: 'all',       label: 'All Orders',  icon: null },
+  { id: 'delivered', label: 'Delivered',   icon: 'check' },
+  { id: 'cancelled', label: 'Cancelled',   icon: 'close' },
+  { id: 'reordered', label: 'Reordered',   icon: 'refresh' },
 ];
 
-const ORDERS = [
-  {
-    id: '1',
-    restaurant: 'Punjab Grill',
-    date: '24 Apr 2026',
-    time: '8:30 PM',
-    items: 'Butter Chicken, Naan (2), Rice',
-    orderId: '#PG12456',
-    price: '₹1,240',
-    status: 'delivered',
-    image: 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=300&q=80',
-  },
-  {
-    id: '2',
-    restaurant: 'Dominos Pizza',
-    date: '20 Apr 2026',
-    time: '7:15 PM',
-    items: 'Pepperoni Pizza, Garlic Bread',
-    orderId: '#DP98765',
-    price: '₹689',
-    status: 'delivered',
-    image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=300&q=80',
-  },
-  {
-    id: '3',
-    restaurant: 'Chinese Wok',
-    date: '18 Apr 2026',
-    time: '1:20 PM',
-    items: 'Hakka Noodles, Manchurian',
-    orderId: '#CW54321',
-    price: '₹450',
-    status: 'cancelled',
-    image: 'https://images.unsplash.com/photo-1569050467447-ce54b3bbc37d?w=300&q=80',
-  },
-  {
-    id: '4',
-    restaurant: 'Starbucks',
-    date: '15 Apr 2026',
-    time: '11:05 AM',
-    items: 'Caramel Frappuccino, Sandwich',
-    orderId: '#SB11223',
-    price: '₹580',
-    status: 'delivered',
-    image: 'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=300&q=80',
-  },
-];
+function formatOrderWhen(iso: string) {
+  const d = new Date(iso);
+  return {
+    date: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+    time: d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }),
+  };
+}
+
+function orderUiStatus(o: Order): 'delivered' | 'cancelled' | 'active' {
+  if (o.status === 'DELIVERED') return 'delivered';
+  if (o.status === 'CANCELLED') return 'cancelled';
+  return 'active';
+}
+
+function mapOrder(o: Order & { items?: unknown }) {
+  let itemList: any[] = [];
+  if (Array.isArray(o.items)) itemList = o.items;
+  else if (typeof o.items === 'string') {
+    try {
+      itemList = JSON.parse(o.items);
+    } catch {
+      itemList = [];
+    }
+  }
+  const { date, time } = formatOrderWhen(o.created_at);
+  const itemsStr = itemList.map((i: any) => `${i.quantity}x ${i.name}`).join(', ');
+  return {
+    raw: o,
+    id: o.id,
+    restaurant: o.cafe_name,
+    date,
+    time,
+    items: itemsStr || '—',
+    orderId: o.id.slice(0, 8).toUpperCase(),
+    price: `₹${Number(o.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
+    uiStatus: orderUiStatus(o),
+    image: o.cafe_image || 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=300&q=80',
+  };
+}
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -80,8 +78,9 @@ const StatusBadge = ({ status }: { status: string }) => {
   const config: any = {
     delivered: { label: 'Delivered', bg: '#E8F5E9', color: '#2E7D32', icon: '✓' },
     cancelled:  { label: 'Cancelled', bg: '#FFEBEE', color: '#C62828', icon: '✕' },
+    active:  { label: 'In progress', bg: '#FFF8E1', color: '#B8860B', icon: '⏱' },
     reordered:  { label: 'Reordered', bg: '#FFF8E1', color: '#B8860B', icon: '↺' },
-  }[status] || {};
+  }[status] || { label: status, bg: '#F5F5F5', color: '#555', icon: '•' };
 
   return (
     <View style={[styles.statusBadge, { backgroundColor: config.bg }]}>
@@ -96,8 +95,16 @@ const StatusBadge = ({ status }: { status: string }) => {
 };
 
 // ─── Order Card ───────────────────────────────────────────────────────────────
-const OrderCard = ({ order }: { order: any }) => {
-  const isCancelled = order.status === 'cancelled';
+const OrderCard = ({
+  order,
+  onViewDetails,
+  onReorder,
+}: {
+  order: any;
+  onViewDetails: (id: string) => void;
+  onReorder: (o: Order) => void;
+}) => {
+  const isCancelled = order.uiStatus === 'cancelled';
 
   return (
     <View style={styles.card}>
@@ -107,11 +114,11 @@ const OrderCard = ({ order }: { order: any }) => {
         <View style={styles.cardMeta}>
           <View style={styles.cardMetaTop}>
             <Text style={styles.cardRestaurant}>{order.restaurant}</Text>
-            <StatusBadge status={order.status} />
+            <StatusBadge status={order.uiStatus} />
           </View>
           <Text style={styles.cardDate}>{order.date}  •  {order.time}</Text>
           <Text style={styles.cardItems}>{order.items}</Text>
-          <Text style={styles.cardOrderId}>Order ID: {order.orderId}</Text>
+          <Text style={styles.cardOrderId}>Order ID: #{order.orderId}</Text>
         </View>
       </View>
 
@@ -122,7 +129,7 @@ const OrderCard = ({ order }: { order: any }) => {
       <View style={styles.cardBottom}>
         <Text style={styles.cardPrice}>{order.price}</Text>
         <View style={styles.cardActions}>
-          <TouchableOpacity style={styles.viewDetailsBtn} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.viewDetailsBtn} activeOpacity={0.7} onPress={() => onViewDetails(order.raw.id)}>
             <View style={styles.viewDetailsRow}><Text style={styles.viewDetailsText}>View Details</Text><AppIcon name="▾" size={12} color="#555" /></View>
           </TouchableOpacity>
           {isCancelled ? (
@@ -131,7 +138,7 @@ const OrderCard = ({ order }: { order: any }) => {
               <Text style={styles.removeBtnText}>Remove</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={styles.reorderBtn} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.reorderBtn} activeOpacity={0.85} onPress={() => onReorder(order.raw)}>
               <AppIcon name="refresh" size={13} color="#FFFFFF" />
               <Text style={styles.reorderText}>Reorder</Text>
             </TouchableOpacity>
@@ -146,14 +153,48 @@ const OrderCard = ({ order }: { order: any }) => {
 export default function MyOrdersScreen() {
   const navigation = useNavigation<Nav>();
   const [activeFilter, setActiveFilter] = useState('all');
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const filtered = ORDERS.filter(
-    (o) => activeFilter === 'all' || o.status === activeFilter
-  );
+  const loadOrders = useCallback(async () => {
+    try {
+      const { data } = await ordersApi.list({ limit: 50 });
+      setOrders((data.data || []).map((o: Order) => mapOrder(o)));
+    } catch {
+      setOrders([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadOrders();
+  }, [loadOrders]);
+
+  const filtered = orders.filter((o) => {
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'reordered') return false;
+    return o.uiStatus === activeFilter;
+  });
+
+  const onViewDetails = (orderId: string) => {
+    navigation.navigate('OrderTracking', { orderId });
+  };
+
+  const onReorder = (o: Order) => {
+    navigation.navigate('Menu', { cafeId: o.cafe_id, cafeName: o.cafe_name });
+  };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={BG} />
+    <ImageBackground 
+      source={require('../../assets/images/app_bg.png')} 
+      style={styles.safeArea}
+      resizeMode="cover"
+    >
+      <SafeAreaView style={{ flex: 1, width: '100%' }}>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
       {/* Header */}
       <View style={styles.header}>
@@ -174,36 +215,73 @@ export default function MyOrdersScreen() {
       </View>
 
       {/* Filter Tabs */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-      >
-        {FILTERS.map((f) => (
-          <TouchableOpacity
-            key={f.id}
-            style={[styles.filterPill, activeFilter === f.id && styles.filterPillActive]}
-            onPress={() => setActiveFilter(f.id)}
-            activeOpacity={0.75}
-          >
-            {activeFilter !== f.id && (
-              <AppIcon name={f.icon} size={13} color="#555" />
-            )}
-            <Text style={[styles.filterPillText, activeFilter === f.id && styles.filterPillTextActive]}>
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      <View style={styles.filterContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        >
+          {FILTERS.map((f) => {
+            const isActive = activeFilter === f.id;
+            return (
+              <TouchableOpacity
+                key={f.id}
+                style={[
+                  styles.filterPill, 
+                  isActive ? styles.filterPillActive : styles.filterPillInactive
+                ]}
+                onPress={() => setActiveFilter(f.id)}
+                activeOpacity={0.8}
+              >
+                {f.icon && (
+                  <AppIcon 
+                    name={f.icon} 
+                    size={14} 
+                    color={isActive ? "#fff" : "#4A3520"} 
+                    strokeWidth={2}
+                  />
+                )}
+                <Text style={[
+                  styles.filterPillText, 
+                  isActive ? styles.filterPillTextActive : styles.filterPillTextInactive
+                ]}>
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadOrders();
+            }}
+            tintColor={ACCENT}
+          />
+        }
       >
-        {/* Order Cards */}
-        {filtered.map((order) => (
-          <OrderCard key={order.id} order={order} />
-        ))}
+        {loading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={ACCENT} />
+          </View>
+        ) : (
+          filtered.map((order) => (
+            <OrderCard key={order.id} order={order} onViewDetails={onViewDetails} onReorder={onReorder} />
+          ))
+        )}
+
+        {!loading && filtered.length === 0 && (
+          <View style={styles.emptyOrders}>
+            <Text style={styles.emptyOrdersText}>No orders in this category yet.</Text>
+          </View>
+        )}
 
         {/* Help Banner */}
         <View style={styles.helpBanner}>
@@ -225,13 +303,14 @@ export default function MyOrdersScreen() {
 
         <View style={{ height: 100 }} />
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: BG },
+  safeArea: { flex: 1, width: '100%' },
 
   // Header
   header: {
@@ -274,33 +353,48 @@ const styles = StyleSheet.create({
   filterIcon: { fontSize: 16, color: '#555' },
 
   // Filter pills
+  filterContainer: {
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
   filterRow: {
     paddingHorizontal: 20,
-    paddingBottom: 14,
-    gap: 8,
+    gap: 10,
     flexDirection: 'row',
   },
   filterPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 50,
-    backgroundColor: '#FFFFFF',
-    marginRight: 8,
-    gap: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+    borderWidth: 1,
   },
-  filterPillActive: { backgroundColor: BROWN },
-  filterPillIcon: { fontSize: 13 },
-  filterPillText: { fontSize: 14, fontWeight: '600', color: '#555' },
-  filterPillTextActive: { color: '#FFFFFF' },
+  filterPillActive: { 
+    backgroundColor: '#4A3520',
+    borderColor: '#4A3520',
+  },
+  filterPillInactive: {
+    backgroundColor: '#F9F5F1',
+    borderColor: '#E8DED3',
+  },
+  filterPillText: { 
+    fontSize: 14, 
+    fontWeight: '600',
+  },
+  filterPillTextActive: { 
+    color: '#FFFFFF' 
+  },
+  filterPillTextInactive: {
+    color: '#4A3520'
+  },
 
-  scrollContent: { paddingHorizontal: 20, paddingTop: 4 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 4, width: '100%' },
+
+  loadingBox: { paddingVertical: 40, alignItems: 'center' },
+  emptyOrders: { paddingVertical: 32, alignItems: 'center' },
+  emptyOrdersText: { fontSize: 14, color: '#888' },
 
   // Order Card
   card: {

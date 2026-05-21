@@ -12,8 +12,10 @@ import {
   TouchableOpacity,
   Animated,
   Easing,
+  Image,
 } from 'react-native';
 import { AppIcon } from '../../components/ui';
+import { BRAND } from '../../constants/brand';
 
 // ─── Shared palette ────────────────────────────────────────────────────────────
 const C = {
@@ -57,8 +59,8 @@ export function SpecialMenuBanner({ onPress }: { onPress?: () => void }) {
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(shimmer, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(shimmer, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(shimmer, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+        Animated.timing(shimmer, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
       ])
     ).start();
   }, []);
@@ -75,19 +77,16 @@ export function SpecialMenuBanner({ onPress }: { onPress?: () => void }) {
           <Text style={b1.specialTxt}>Special</Text>
           <Text style={b1.menuTxt}>Menu</Text>
         </View>
-        <Text style={b1.url}>www.cafespot.in</Text>
+        <Text style={b1.url}>www.{BRAND.domain}</Text>
       </View>
 
-      {/* CENTER — hexagon cup */}
+      {/* CENTER — photo */}
       <View style={b1.center}>
-        {/* hex background layers */}
-        <View style={b1.hexOuter} />
-        <View style={b1.hexInner}>
-          <AppIcon name="coffee" size={36} color={C.gold} style={b1.cupIcon} />
-        </View>
-        {/* decorative bean dots */}
-        <Text style={[b1.beans, { top: 8, left: 4 }]}>· · ·</Text>
-        <Text style={[b1.beans, { bottom: 8, right: 4 }]}>· · ·</Text>
+        <Image 
+          source={{ uri: 'https://images.unsplash.com/photo-1559339352-11d035aa65de?w=400' }} 
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
       </View>
 
       {/* RIGHT PANEL */}
@@ -183,8 +182,8 @@ export function OpenTodayBanner({ onPress }: { onPress?: () => void }) {
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(blink, { toValue: 0.3, duration: 800, useNativeDriver: true }),
-        Animated.timing(blink, { toValue: 1,   duration: 800, useNativeDriver: true }),
+        Animated.timing(blink, { toValue: 0.3, duration: 800, useNativeDriver: false }),
+        Animated.timing(blink, { toValue: 1,   duration: 800, useNativeDriver: false }),
       ])
     ).start();
   }, []);
@@ -194,7 +193,10 @@ export function OpenTodayBanner({ onPress }: { onPress?: () => void }) {
 
       {/* Photo area (right half) */}
       <View style={b5.photoArea}>
-        <AppIcon name="coffee" size={64} color={C.gold} style={b5.photoIcon} />
+        <Image 
+          source={{ uri: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=400' }} 
+          style={StyleSheet.absoluteFillObject}
+        />
         {/* Fade overlay from left */}
         <View style={b5.fade} />
       </View>
@@ -212,11 +214,11 @@ export function OpenTodayBanner({ onPress }: { onPress?: () => void }) {
         <View style={b5.contactRow}>
           <View style={b5.contactItem}>
             <AppIcon name="phone" size={10} color={C.muted2} />
-            <Text style={b5.contactTxt}>+91 98765 43210</Text>
+            <Text style={b5.contactTxt}>{BRAND.supportPhoneDisplay}</Text>
           </View>
           <View style={b5.contactItem}>
             <AppIcon name="email" size={10} color={C.muted2} />
-            <Text style={b5.contactTxt}>hello@cafespot.in</Text>
+            <Text style={b5.contactTxt}>{BRAND.supportEmail}</Text>
           </View>
         </View>
       </View>
@@ -304,7 +306,7 @@ export function BuyOneGetOneBanner({ onPress }: { onPress?: () => void }) {
           <Text style={b2.special}>Special</Text>
           <Text style={b2.menu}>Menu</Text>
         </View>
-        <Text style={b2.url}>www.cafespot.in</Text>
+        <Text style={b2.url}>www.{BRAND.domain}</Text>
       </View>
 
       {/* Center light panel — diagonal clip via skew */}
@@ -313,22 +315,22 @@ export function BuyOneGetOneBanner({ onPress }: { onPress?: () => void }) {
           <Text style={b2.b1g1}>BUY 1{'\n'}GET 1</Text>
           <View style={b2.contactLine}>
             <AppIcon name="phone" size={8} color="#555" />
-            <Text style={b2.contact}>+91 98765 43210</Text>
+            <Text style={b2.contact}>{BRAND.supportPhoneDisplay}</Text>
           </View>
           <View style={b2.contactLine}>
             <AppIcon name="email" size={8} color="#555" />
-            <Text style={b2.contact}>hello@cafespot.in</Text>
+            <Text style={b2.contact}>{BRAND.supportEmail}</Text>
           </View>
         </View>
       </View>
 
       {/* Right — two photo columns */}
       <View style={b2.photoWrap}>
-        <View style={[b2.photoCol, { backgroundColor: '#181008' }]}>
-          <AppIcon name="coffee" size={34} color={C.gold} />
+        <View style={b2.photoCol}>
+          <Image source={{ uri: 'https://images.unsplash.com/photo-1510707577719-ae7c14805e3a?w=300' }} style={StyleSheet.absoluteFillObject} />
         </View>
-        <View style={[b2.photoCol, { backgroundColor: '#100c04' }]}>
-          <AppIcon name="tea" size={34} color={C.gold} />
+        <View style={b2.photoCol}>
+          <Image source={{ uri: 'https://images.unsplash.com/photo-1544787210-2213d84ad962?w=300' }} style={StyleSheet.absoluteFillObject} />
         </View>
       </View>
 

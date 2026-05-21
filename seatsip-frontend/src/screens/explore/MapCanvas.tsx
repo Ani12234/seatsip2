@@ -22,6 +22,10 @@ type Props = {
   selectedId?: string;
   pinColors: Record<Restaurant['category'], string>;
   onSelect: (restaurant: Restaurant) => void;
+  /** Web-only — no-op on native. Called when the gallery panel opens. */
+  onGalleryOpen?: () => void;
+  /** Web-only — no-op on native. Called when the gallery panel closes. */
+  onGalleryClose?: () => void;
 };
 
 export type MapCanvasHandle = {

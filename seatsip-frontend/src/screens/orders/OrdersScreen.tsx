@@ -119,7 +119,7 @@ export default function OrdersScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  root: { flex: 1, width: '100%' },
   headerTitle: {
     fontSize: Typography['2xl'], fontWeight: Typography.extrabold, color: Colors.textPrimary,
     paddingHorizontal: Spacing.base, paddingTop: Spacing.md, paddingBottom: Spacing.base,

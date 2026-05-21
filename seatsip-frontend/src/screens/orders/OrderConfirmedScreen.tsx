@@ -51,6 +51,8 @@ export default function OrderConfirmedScreen() {
   const dateStr = dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   const timeStr = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   const dateTime = `${dateStr} • ${timeStr}`;
+  const paymentMethod = order?.payment_method || 'WALLET';
+  const paymentLabel = paymentMethod === 'CARD' ? 'Card' : paymentMethod === 'UPI' ? 'UPI' : 'Wallet';
 
   return (
     <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
@@ -94,11 +96,10 @@ export default function OrderConfirmedScreen() {
             {/* Card pill */}
             <View style={styles.cardPill}>
               <View style={styles.mcLogo}>
-                <View style={[styles.mcCircle, { backgroundColor: '#EB001B' }]} />
-                <View style={[styles.mcCircle, { backgroundColor: '#F79E1B', marginLeft: -8 }]} />
+                <AppIcon name={paymentMethod === 'WALLET' ? 'wallet' : 'payments'} size={22} color="#111827" />
               </View>
               <View>
-                <Text style={styles.cardName}>Payment via Wallet</Text>
+                <Text style={styles.cardName}>Payment via {paymentLabel}</Text>
                 <Text style={styles.cardLast4}>•••• SeatSip</Text>
               </View>
             </View>
@@ -173,7 +174,7 @@ const styles = StyleSheet.create({
   value: { fontSize: 17, fontWeight: '600', color: '#111827' },
   
   cardPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f3f4f6', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
-  mcLogo: { flexDirection: 'row' },
+  mcLogo: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   mcCircle: { width: 22, height: 22, borderRadius: 11 },
   cardName: { fontSize: 14, fontWeight: '600', color: '#111827' },
   cardLast4: { fontSize: 13, color: '#9ca3af' },

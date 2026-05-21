@@ -18,7 +18,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { cafesApi } from '../../services/api';
 import { RootStackParamList } from '../../navigation/types';
@@ -321,8 +321,10 @@ function RestaurantCard({
   );
 }
 
+
 export default function MapScreen() {
   const navigation = useNavigation<Nav>();
+  const route = useRoute<any>();
   const insets = useSafeAreaInsets();
   const mapRef = useRef<any>(null);
   const listRef = useRef<ScrollView>(null);
@@ -335,6 +337,7 @@ export default function MapScreen() {
   const [selectedId, setSelectedId] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [showCityPicker, setShowCityPicker] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -399,10 +402,25 @@ export default function MapScreen() {
   useEffect(() => {
     Animated.spring(listAnim, {
       toValue: 1,
-      useNativeDriver: true,
+      useNativeDriver: false,
       friction: 8,
     }).start();
   }, [listAnim, selectedCity]);
+
+  // Handle incoming cafe selection from CafeDetail
+  useEffect(() => {
+    const targetId = route.params?.cafeId;
+    if (targetId && !loading && restaurants.length > 0) {
+      const target = restaurants.find(r => r.id === targetId);
+      if (target) {
+        // Delay slightly to ensure MapCanvas is ready
+        const timer = setTimeout(() => {
+          selectRestaurant(target);
+        }, 800);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [route.params?.cafeId, loading, restaurants]);
 
   const selectRestaurant = (restaurant: Restaurant) => {
     setSelectedId(restaurant.id);
@@ -439,12 +457,14 @@ export default function MapScreen() {
         selectedId={selectedRestaurant?.id}
         pinColors={PIN_COLORS}
         onSelect={selectRestaurant}
+        onGalleryOpen={() => setGalleryOpen(true)}
+        onGalleryClose={() => setGalleryOpen(false)}
       />
 
-      <View style={[styles.topOverlay, { paddingTop: insets.top + 10 }]}>
+      <View style={[styles.topOverlay, { paddingTop: insets.top + 10 }, galleryOpen && { display: 'none' }]}>
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.cityButton} onPress={() => setShowCityPicker(true)}>
-            <AppIcon name="location" size={17} color="#E63946" />
+            <AppIcon name="location" size={17} color="#9CA764" />
             <View style={styles.cityButtonTextGroup}>
               <Text style={styles.cityButtonLabel}>FoodMap</Text>
               <Text style={styles.cityButtonTitle} numberOfLines={1}>{selectedCity.name}</Text>
@@ -539,7 +559,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(13, 27, 42, 0.9)',
+    backgroundColor: '#654121',
     paddingBottom: 10,
   },
   topBar: {
@@ -552,9 +572,9 @@ const styles = StyleSheet.create({
     minWidth: 132,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.16)',
+    borderColor: 'rgba(255, 255, 255, 0.25)',
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
@@ -564,7 +584,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cityButtonLabel: {
-    color: '#C9BBAA',
+    color: 'rgba(255, 255, 255, 0.7)',
     fontSize: 10,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -606,11 +626,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 7,
     borderWidth: 1,
-    borderColor: 'rgba(42, 26, 14, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   categoryChipActive: {
-    backgroundColor: '#E63946',
-    borderColor: '#E63946',
+    backgroundColor: '#9CA764',
+    borderColor: '#9CA764',
   },
   categoryLabel: {
     color: '#2A1A0E',
@@ -669,8 +689,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     backgroundColor: '#FFF8EF',
-    borderWidth: 2,
+    borderWidth: 0,
     borderColor: 'transparent',
+    position: 'absolute',
+    bottom: 110,
+    left: 16,
+    right: 16,
+    zIndex: 20,
   },
   restaurantCardSelected: {
     borderColor: '#E63946',

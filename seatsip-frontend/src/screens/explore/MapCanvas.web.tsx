@@ -28,6 +28,8 @@ type Props = {
   selectedId?: string;
   pinColors: Record<Restaurant['category'], string>;
   onSelect: (restaurant: Restaurant) => void;
+  onGalleryOpen?: () => void;
+  onGalleryClose?: () => void;
 };
 
 export type MapCanvasHandle = {
@@ -71,35 +73,338 @@ function markerLabel(category: Restaurant['category']) {
   return 'K';
 }
 
-function createMarkerElement(restaurant: Restaurant, color: string, selected: boolean) {
+// ─── Gallery images for the masonry panel ───────────────────────────────────
+const GALLERY_IMAGES = [
+  { src: require('../../assets/images/home_hero.jpg'), alt: 'Cafe interior', ar: '4/3' },
+  { src: require('../../assets/images/brew_banner.png'), alt: 'Latte art', ar: '3/4' },
+  { src: require('../../assets/images/dessert_banner.png'), alt: 'Pastries', ar: '2/3' },
+  { src: require('../../assets/images/food_banner.png'), alt: 'Outdoor seating', ar: '1/1' },
+  { src: require('../../assets/images/matcha_banner.png'), alt: 'Coffee beans', ar: '2/3' },
+];
+
+/**
+ * setupMarkerClick — wraps the marker button in a relative-positioned div,
+ * appends the SVG ring as a sibling, animates it with rAF, then opens the
+ * gallery panel. MapLibre's internal translate transform on the marker
+ * element is preserved because we only touch the parent wrapper.
+ */
+function setupMarkerClick(
+  el: HTMLElement,
+  mapContainer: HTMLElement,
+  cafeName: string,
+  onGalleryOpen?: () => void,
+  onGalleryClose?: () => void,
+) {
+  const RADIUS = 24;
+  const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
+  // Guard: prevent double-click during animation
+  if ((el as any).__ringActive) return;
+  (el as any).__ringActive = true;
+
+  // Step 1: Make sure the marker's parent doesn't clip the ring
+  const markerParent = el.parentElement!;
+  markerParent.style.overflow = 'visible';
+
+  // Step 2: Calculate marker center relative to its parent using
+  // getBoundingClientRect — this accounts for MapLibre's CSS transforms
+  const elRect = el.getBoundingClientRect();
+  const parentRect = markerParent.getBoundingClientRect();
+
+  const cx = elRect.left - parentRect.left + elRect.width / 2;
+  const cy = elRect.top - parentRect.top + elRect.height / 2;
+
+  // Step 3: Size the SVG around the center point so the ring is
+  // perfectly centered over the marker regardless of its map position
+  const SVG_SIZE = 80;
+  const svgLeft = cx - SVG_SIZE / 2;
+  const svgTop  = cy - SVG_SIZE / 2;
+
+  // Step 4: Build the SVG — innerHTML once, no duplicate appends, no
+  // manual createElementNS for circles (avoids wipe bug)
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', String(SVG_SIZE));
+  svg.setAttribute('height', String(SVG_SIZE));
+  svg.style.cssText = `
+    position: absolute;
+    top: ${svgTop}px;
+    left: ${svgLeft}px;
+    pointer-events: none;
+    z-index: 99999;
+    overflow: visible;
+  `;
+
+  svg.innerHTML = `
+    <circle cx="40" cy="40" r="${RADIUS}" fill="none"
+      stroke="rgba(255,255,255,0.35)" stroke-width="4"/>
+    <circle id="seatsip-ring-fill"
+      cx="40" cy="40" r="${RADIUS}" fill="none"
+      stroke="#ff7a3d" stroke-width="4" stroke-linecap="round"
+      stroke-dasharray="${CIRCUMFERENCE}"
+      stroke-dashoffset="${CIRCUMFERENCE}"
+      transform="rotate(-90 40 40)"/>
+  `;
+
+  // Step 5: Append SVG as sibling — never wrap or move el
+  markerParent.appendChild(svg);
+
+  // Step 6: Keep the marker button on top of the ring
+  el.style.position = 'relative';
+  el.style.zIndex   = '100000';
+
+  const ring = svg.querySelector('#seatsip-ring-fill') as SVGCircleElement | null;
+
+  // Step 7: Animate with rAF — no CSS transitions, no fights with
+  // MapLibre's internal transform handling
+  const startTime = performance.now();
+  const DURATION  = 1400;
+
+  function animate(now: number) {
+    const progress = Math.min((now - startTime) / DURATION, 1);
+
+    ring?.setAttribute(
+      'stroke-dashoffset',
+      String(CIRCUMFERENCE * (1 - progress)),
+    );
+
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      // Brief pause so the user sees the completed ring
+      setTimeout(() => {
+        svg.parentNode?.removeChild(svg);
+        el.style.zIndex = '';
+        (el as any).__ringActive = false;
+        openGallery(mapContainer, cafeName, onGalleryOpen, onGalleryClose);
+      }, 80);
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+/**
+ * openGallery — creates the full-screen gallery panel, appends it to the
+ * map container div (not document.body), then triggers the slide-in via
+ * a single rAF so the browser paints the initial translateX(100%) first.
+ */
+function openGallery(
+  mapContainer: HTMLElement,
+  cafeName: string,
+  onGalleryOpen?: () => void,
+  onGalleryClose?: () => void,
+) {
+  // Prevent duplicate panels
+  if (mapContainer.querySelector('#seatsip-gallery-panel')) return;
+
+  const panel = document.createElement('div');
+  panel.id = 'seatsip-gallery-panel';
+  Object.assign(panel.style, {
+    position: 'absolute',
+    inset: '0',
+    background: '#fff8f5',
+    zIndex: '100',
+    transform: 'translateX(100%)',
+    transition: 'transform 0.45s cubic-bezier(0.4,0,0.2,1)',
+    overflowY: 'auto',
+    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+  });
+
+  // ── Sticky header ────────────────────────────────────────────────────────
+  const header = document.createElement('div');
+  Object.assign(header.style, {
+    position: 'sticky',
+    top: '0',
+    background: 'rgba(255,248,245,0.92)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
+    padding: '14px 16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottom: '0.5px solid rgba(0,0,0,0.06)',
+    zIndex: '10',
+  });
+
+  // Back button
+  const backBtn = document.createElement('button');
+  backBtn.id = 'seatsip-gallery-back';
+  backBtn.setAttribute('aria-label', 'Go back');
+  Object.assign(backBtn.style, {
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    background: '#fff',
+    border: '1px solid #e8ddd5',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+    flexShrink: '0',
+  });
+  backBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15.75 19.5L8.25 12l7.5-7.5"/></svg>`;
+  backBtn.addEventListener('click', () => closeGallery(panel, onGalleryClose));
+
+  // Title
+  const title = document.createElement('span');
+  Object.assign(title.style, {
+    fontSize: '16px',
+    fontWeight: '800',
+    color: '#1a0e0a',
+    flex: '1',
+    textAlign: 'center',
+    margin: '0 8px',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  });
+  title.textContent = cafeName;
+
+  // Heart button
+  const heartBtn = document.createElement('button');
+  heartBtn.setAttribute('aria-label', 'Save to favourites');
+  Object.assign(heartBtn.style, {
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    background: '#fff',
+    border: '1px solid #e8ddd5',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+    flexShrink: '0',
+  });
+  heartBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e23744" stroke-width="2" stroke-linecap="round"><path d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/></svg>`;
+  let hearted = false;
+  heartBtn.addEventListener('click', () => {
+    hearted = !hearted;
+    heartBtn.querySelector('svg')!.style.fill = hearted ? '#e23744' : 'none';
+  });
+
+  header.appendChild(backBtn);
+  header.appendChild(title);
+  header.appendChild(heartBtn);
+
+  // ── Masonry grid ─────────────────────────────────────────────────────────
+  const grid = document.createElement('div');
+  Object.assign(grid.style, {
+    columns: '2',
+    columnGap: '10px',
+    padding: '8px 12px 32px',
+  });
+
+  GALLERY_IMAGES.forEach((img) => {
+    const item = document.createElement('div');
+    Object.assign(item.style, {
+      breakInside: 'avoid',
+      marginBottom: '10px',
+      borderRadius: '16px',
+      overflow: 'hidden',
+      aspectRatio: img.ar,
+    });
+
+    const imgEl = document.createElement('img');
+    imgEl.src = img.src;
+    imgEl.alt = img.alt;
+    imgEl.loading = 'lazy';
+    Object.assign(imgEl.style, {
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+      display: 'block',
+    });
+
+    item.appendChild(imgEl);
+    grid.appendChild(item);
+  });
+
+  panel.appendChild(header);
+  panel.appendChild(grid);
+  mapContainer.appendChild(panel);
+
+  // 6. Trigger slide-in: one rAF so the browser paints the initial
+  //    translateX(100%) state before we set translateX(0).
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      panel.style.transform = 'translateX(0)';
+      onGalleryOpen?.();
+    });
+  });
+}
+
+/**
+ * closeGallery — slides the panel back out to the right, then removes it
+ * from the DOM once the CSS transition ends.
+ */
+function closeGallery(panel: HTMLElement, onGalleryClose?: () => void) {
+  panel.style.transform = 'translateX(100%)';
+  panel.addEventListener(
+    'transitionend',
+    () => {
+      if (panel.parentNode) panel.parentNode.removeChild(panel);
+      onGalleryClose?.();
+    },
+    { once: true },
+  );
+}
+
+function createMarkerElement(
+  restaurant: Restaurant,
+  color: string,
+  selected: boolean,
+  mapContainer: HTMLElement | null,
+  onSelect: (restaurant: Restaurant) => void,
+  onGalleryOpen?: () => void,
+  onGalleryClose?: () => void,
+) {
   const element = document.createElement('button');
   element.type = 'button';
   element.setAttribute('aria-label', restaurant.name);
   element.style.width = selected ? '42px' : '34px';
   element.style.height = selected ? '42px' : '34px';
   element.style.borderRadius = '50%';
-  element.style.border = '3px solid #FFFFFF';
+  element.style.border = selected ? '3px solid #FFFFFF' : '2px solid #FFFFFF';
   element.style.background = color;
   element.style.color = '#FFFFFF';
   element.style.fontWeight = '800';
   element.style.fontSize = selected ? '14px' : '12px';
-  element.style.boxShadow = selected ? '0 10px 24px rgba(0,0,0,0.32)' : '0 6px 16px rgba(0,0,0,0.24)';
+  element.style.boxShadow = selected
+    ? '0 10px 24px rgba(0,0,0,0.32)'
+    : '0 6px 16px rgba(0,0,0,0.24)';
   element.style.cursor = 'pointer';
   element.style.display = 'flex';
   element.style.alignItems = 'center';
   element.style.justifyContent = 'center';
   element.style.transition = 'width 160ms ease, height 160ms ease, box-shadow 160ms ease';
   element.textContent = markerLabel(restaurant.category);
+
+  element.addEventListener('click', () => {
+    if (selected && mapContainer) {
+      // Selected marker → ring loader → gallery
+      setupMarkerClick(element, mapContainer, restaurant.name, onGalleryOpen, onGalleryClose);
+    } else {
+      // Non-selected marker → focus on map + select card
+      onSelect(restaurant);
+    }
+  });
+
   return element;
 }
 
-const MapCanvas = forwardRef<MapCanvasHandle, Props>(({ restaurants, city, selectedId, pinColors, onSelect }, ref) => {
+const MapCanvas = forwardRef<MapCanvasHandle, Props>(({ restaurants, city, selectedId, pinColors, onSelect, onGalleryOpen, onGalleryClose }, ref) => {
   const containerRef = useRef<any>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef<Marker[]>([]);
   const onSelectRef = useRef(onSelect);
+  const onGalleryOpenRef = useRef(onGalleryOpen);
+  const onGalleryCloseRef = useRef(onGalleryClose);
 
   onSelectRef.current = onSelect;
+  onGalleryOpenRef.current = onGalleryOpen;
+  onGalleryCloseRef.current = onGalleryClose;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -138,13 +443,31 @@ const MapCanvas = forwardRef<MapCanvasHandle, Props>(({ restaurants, city, selec
     });
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
-    map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
 
     map.on('load', () => {
       if (map.getSource('openmaptiles') && !map.getLayer(BUILDINGS_LAYER.id)) {
         map.addLayer(BUILDINGS_LAYER as any);
       }
       map.resize();
+    });
+
+    // Handle missing images to prevent errors and fix SDF/non-SDF mixing
+    map.on('styleimagemissing', (e) => {
+      // Add a simple placeholder for missing images
+      const id = e.id;
+      if (!map.hasImage(id)) {
+        // Create image data to avoid SDF/non-SDF mixing
+        const size = 16;
+        const data = new Uint8Array(size * size * 4);
+        // Fill with gray color (RGBA)
+        for (let i = 0; i < data.length; i += 4) {
+          data[i] = 136;     // R
+          data[i + 1] = 136; // G  
+          data[i + 2] = 136; // B
+          data[i + 3] = 255; // A
+        }
+        map.addImage(id, { width: size, height: size, data });
+      }
     });
 
     mapRef.current = map;
@@ -188,13 +511,12 @@ const MapCanvas = forwardRef<MapCanvasHandle, Props>(({ restaurants, city, selec
       const element = createMarkerElement(
         restaurant,
         pinColors[restaurant.category],
-        restaurant.id === selectedId
+        restaurant.id === selectedId,
+        containerRef.current,
+        onSelectRef.current,
+        onGalleryOpenRef.current,
+        onGalleryCloseRef.current,
       );
-
-      element.addEventListener('click', (event) => {
-        event.stopPropagation();
-        onSelectRef.current(restaurant);
-      });
 
       return new maplibregl.Marker({ element, anchor: 'center' })
         .setLngLat([restaurant.lng, restaurant.lat])

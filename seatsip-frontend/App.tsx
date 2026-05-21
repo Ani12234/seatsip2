@@ -1,12 +1,13 @@
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { CartProvider } from './src/context/CartContext';
+import { UnreadNotificationsProvider, useUnreadNotifications } from './src/context/UnreadNotificationsContext';
 import { RootStackParamList, TabParamList } from './src/navigation/types';
 import { Colors } from './src/theme';
 
@@ -14,6 +15,8 @@ import { Colors } from './src/theme';
 import OnboardingScreen from './src/screens/auth/OnboardingScreen';
 import LoginScreen from './src/screens/auth/LoginScreen';
 import RegisterScreen from './src/screens/auth/RegisterScreen';
+import ForgotPasswordScreen from './src/screens/auth/ForgotPasswordScreen';
+import LoadingScreen from './src/screens/auth/LoadingScreen';
 import HomeScreen from './src/screens/home/HomeScreen';
 import ExploreScreen from './src/screens/explore/ExploreScreen';
 import OrdersScreen from './src/screens/orders/OrdersScreen';
@@ -39,8 +42,20 @@ import ReservationHistoryScreen from './src/screens/reservations/ReservationHist
 import MyOrdersScreen from './src/screens/orders/MyOrdersScreen';
 import HelpCenterScreen from './src/screens/profile/HelpCenterScreen';
 import TermsScreen from './src/screens/profile/TermsScreen';
+import PrivacyPolicyScreen from './src/screens/profile/PrivacyPolicyScreen';
+import SupportChatScreen from './src/screens/profile/SupportChatScreen';
 import PlaceholderScreen from './src/screens/PlaceholderScreen';
-import MenuItemDetailScreen from './src/screens/cafe/MenuItemDetailScreen';
+// import MenuItemDetailScreen from './src/screens/cafe/MenuItemDetailScreen';
+import PreOrderMenuScreen from './src/screens/reservations/PreOrderMenuScreen';
+import CafeListScreen from './src/screens/home/CafeListScreen';
+import PopularItemsScreen from './src/screens/home/PopularItemsScreen';
+import AllRewardsScreen from './src/screens/rewards/AllRewardsScreen';
+import ChangePasswordScreen from './src/screens/profile/ChangePasswordScreen';
+import LanguageSelectScreen from './src/screens/profile/LanguageSelectScreen';
+import CafeGalleryScreen from './src/screens/cafe/CafeGalleryScreen';
+import { RootErrorBoundary } from './src/components/RootErrorBoundary';
+import { OfflineBanner } from './src/components/OfflineBanner';
+import { ThemeProvider, useAppTheme } from './src/theme/ThemeContext';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -49,7 +64,10 @@ import { TouchableOpacity, Text, View, StyleSheet, Platform, UIManager, LayoutAn
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Home, Map as MapIcon, Utensils, Gift, User } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFonts, Courgette_400Regular } from '@expo-google-fonts/courgette';
+import { Fredoka_700Bold, Fredoka_400Regular } from '@expo-google-fonts/fredoka';
 import AppIcon from './src/components/ui/AppIcon';
+import { SecureAppShell } from './src/security/SecureAppShell';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -65,6 +83,7 @@ const TAB_ICONS: Record<string, { label: string; Icon: any }> = {
 
 function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const { unreadCount } = useUnreadNotifications();
 
   return (
     <View style={[styles.tabBarContainer, { paddingBottom: insets.bottom || 16 }]}>
@@ -95,16 +114,20 @@ function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
               key={route.key}
               onPress={onPress}
               activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={route.name === 'Profile' && unreadCount > 0 ? `${label}, ${unreadCount} unread notifications` : label}
               style={[
                 styles.tabButton,
                 isFocused ? styles.tabButtonActive : styles.tabButtonInactive,
               ]}
             >
-              <Icon
-                size={20}
-                strokeWidth={isFocused ? 2 : 1.5}
-                color={isFocused ? '#2A1A0E' : 'rgba(245, 237, 214, 0.6)'}
-              />
+              <View style={styles.tabIconWrap}>
+                <Icon
+                  size={20}
+                  strokeWidth={isFocused ? 2 : 1.5}
+                  color={isFocused ? '#2A1A0E' : 'rgba(245, 237, 214, 0.6)'}
+                />
+              </View>
               {isFocused && (
                 <Text style={styles.tabLabel} numberOfLines={1}>
                   {label}
@@ -133,15 +156,32 @@ function TabNavigator() {
   );
 }
 
+function ThemedNavigationShell({ children }: { children: React.ReactNode }) {
+  const { darkMode } = useAppTheme();
+  const theme = darkMode ? DarkTheme : DefaultTheme;
+  return (
+    <NavigationContainer theme={theme}>
+      {children}
+    </NavigationContainer>
+  );
+}
+
 function Navigation() {
   const { user, isLoading } = useAuth();
+  const [minLoading, setMinLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    if (!isLoading) {
+      // Keep loading screen for at least 1.5s for a premium feel
+      const timer = setTimeout(() => {
+        setMinLoading(false);
+      }, 1800);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading]);
 
   if (isLoading) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.background }}>
-        <AppIcon name="coffee" size={40} color={Colors.accent} />
-      </View>
-    );
+    return null;
   }
 
   return (
@@ -151,11 +191,13 @@ function Navigation() {
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
+          <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
         </>
       ) : (
         <>
           <Stack.Screen name="MainTabs" component={TabNavigator} />
           <Stack.Screen name="CafeDetail" component={CafeDetailScreen} />
+          <Stack.Screen name="CafeGallery" component={CafeGalleryScreen} />
           <Stack.Screen name="Menu" component={MenuScreen} />
           <Stack.Screen name="Cart" component={CartScreen} />
           <Stack.Screen name="Checkout" component={CheckoutScreen} />
@@ -163,8 +205,9 @@ function Navigation() {
           <Stack.Screen name="OrderTracking" component={OrderTrackingScreen} />
           <Stack.Screen name="TableSelect" component={TableSelectScreen} />
           <Stack.Screen name="ReservationDetails" component={ReservationDetailsScreen} />
+          <Stack.Screen name="PreOrderMenu" component={PreOrderMenuScreen} />
           <Stack.Screen name="BookingConfirmed" component={BookingConfirmedScreen} />
-          <Stack.Screen name="ProductDetail" component={MenuItemDetailScreen} />
+          {/* <Stack.Screen name="ProductDetail" component={MenuItemDetailScreen} /> */}
           <Stack.Screen name="Discover" component={DiscoverScreen} />
           
           {/* Placeholders for other screens */}
@@ -176,23 +219,51 @@ function Navigation() {
           <Stack.Screen name="OrderHistory" component={MyOrdersScreen} />
           <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
           <Stack.Screen name="Terms" component={TermsScreen} />
+          <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
+          <Stack.Screen name="SupportChat" component={SupportChatScreen} />
+          <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+          <Stack.Screen name="LanguageSelect" component={LanguageSelectScreen} />
         </>
       )}
+      <Stack.Screen name="CafeList" component={CafeListScreen} />
+      <Stack.Screen name="PopularItems" component={PopularItemsScreen} />
+      <Stack.Screen name="AllRewards" component={AllRewardsScreen} />
     </Stack.Navigator>
   );
 }
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Courgette_400Regular,
+    Fredoka_700Bold,
+    Fredoka_400Regular,
+  });
+
+  if (!fontsLoaded) {
+    return null;
+  }
+
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <CartProvider>
-          <NavigationContainer>
-            <Navigation />
-            <StatusBar style="auto" />
-          </NavigationContainer>
-        </CartProvider>
-      </AuthProvider>
+      <SecureAppShell>
+        <ThemeProvider>
+          <AuthProvider>
+            <UnreadNotificationsProvider>
+              <CartProvider>
+                <RootErrorBoundary>
+                  <View style={{ flex: 1 }}>
+                    <OfflineBanner />
+                    <ThemedNavigationShell>
+                      <Navigation />
+                      <StatusBar style="auto" />
+                    </ThemedNavigationShell>
+                  </View>
+                </RootErrorBoundary>
+              </CartProvider>
+            </UnreadNotificationsProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </SecureAppShell>
     </SafeAreaProvider>
   );
 }
@@ -211,7 +282,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#2A1A0E',
+    backgroundColor: '#6B3F1A',
     borderRadius: 30,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -237,6 +308,28 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5EDD6',
     paddingHorizontal: 14,
     gap: 6,
+  },
+  tabIconWrap: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#C62828',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  tabBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '800',
   },
   tabLabel: {
     fontSize: 14,

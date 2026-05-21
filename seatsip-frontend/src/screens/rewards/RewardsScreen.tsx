@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,19 +7,22 @@ import {
   StyleSheet,
   SafeAreaView,
   StatusBar,
+  ImageBackground,
+  Image,
 } from 'react-native';
+import Svg, { Path, Polygon, Circle } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import AppIcon from '../../components/ui/AppIcon';
+import { useAuth } from '../../context/AuthContext';
+import { usersApi } from '../../services/api';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const BROWN = '#2C1A0E';
+const BROWN = '#6D3914';
 const ACCENT = '#8B5E3C';
 const BG = '#F5F0EB';
 
-const CURRENT_POINTS = 820;
-const MIN_POINTS = 500;
-const MAX_POINTS = 1500;
-const PROGRESS = (CURRENT_POINTS - MIN_POINTS) / (MAX_POINTS - MIN_POINTS); // 0–1
+const MIN_POINTS = 0;
+const MAX_TIER_POINTS = 2000;
 
 const WAYS_TO_EARN = [
   { id: '1', icon: '🛒', label: 'Per ₹100 spent',   pts: '+10 pts' },
@@ -28,13 +31,232 @@ const WAYS_TO_EARN = [
   { id: '4', icon: '👥', label: 'Refer a friend',   pts: '+100 pts' },
 ];
 
+// ─── Tier Config ──────────────────────────────────────────────────────────────
+const TIERS = [
+  {
+    id: 'platinum',
+    name: 'CREAM',
+    tag: 'BEST VALUE',
+    description: 'Unlock all benefits',
+    bg: '#E4CDB0',
+    text: '#3F1D0E',
+    subtext: '#7A5035',
+    tagBg: '#3F1D0E',
+    divider: 'rgba(63,29,14,0.2)',
+    iconBg: 'rgba(63,29,14,0.1)',
+    hexFill: '#E4CDB0',
+    hexStroke: '#A2663C',
+    shadow: '#A2663C',
+    benefits: [
+      { icon: 'star', label: '5% Extra\npoints' },
+      { icon: 'support', label: 'Priority\nsupport' },
+      { icon: 'tag', label: 'Exclusive\noffers' },
+      { icon: 'time', label: 'Early\naccess' },
+      { icon: 'delivery', label: 'Free\ndelivery' },
+    ],
+  },
+  {
+    id: 'gold',
+    name: 'CARAMEL',
+    tag: 'MOST POPULAR',
+    description: 'More benefits, more rewards',
+    bg: '#A2663C',
+    text: '#FFFFFF',
+    subtext: '#E4CDB0',
+    tagBg: '#3F1D0E',
+    divider: 'rgba(228,205,176,0.3)',
+    iconBg: 'rgba(255,255,255,0.12)',
+    hexFill: '#A2663C',
+    hexStroke: '#E4CDB0',
+    shadow: '#3F1D0E',
+    benefits: [
+      { icon: 'star', label: '3% Extra\npoints' },
+      { icon: 'support', label: 'Priority\nsupport' },
+      { icon: 'tag', label: 'Exclusive\noffers' },
+      { icon: 'time', label: 'Early\naccess' },
+    ],
+  },
+  {
+    id: 'silver',
+    name: 'COFFEE',
+    tag: null,
+    description: 'Great rewards to get you started',
+    bg: '#3F1D0E',
+    text: '#E4CDB0',
+    subtext: '#A2663C',
+    tagBg: '#A2663C',
+    divider: 'rgba(228,205,176,0.15)',
+    iconBg: 'rgba(228,205,176,0.1)',
+    hexFill: '#3F1D0E',
+    hexStroke: '#A2663C',
+    shadow: '#000000',
+    benefits: [
+      { icon: 'star', label: '1% Extra\npoints' },
+      { icon: 'support', label: 'Standard\nsupport' },
+      { icon: 'tag', label: 'Member\noffers' },
+      { icon: 'time', label: 'Early\naccess' },
+    ],
+  },
+];
+
+// ─── Benefit Icon ─────────────────────────────────────────────────────────────
+const BenefitItem = ({ icon, label, iconBg, textColor }: { icon: string; label: string; iconBg: string; textColor: string }) => (
+  <View style={tierStyles.benefitItem}>
+    <View style={[tierStyles.benefitIconCircle, { backgroundColor: iconBg }]}>
+      <AppIcon name={icon === 'support' ? 'bell' : icon === 'tag' ? 'bookmark' : icon} size={18} color={textColor} />
+    </View>
+    <Text style={[tierStyles.benefitLabel, { color: textColor }]}>{label}</Text>
+  </View>
+);
+
+// ─── Hex Icon ─────────────────────────────────────────────────────────────────
+const HexIcon = ({ fill, stroke }: { fill: string; stroke: string }) => (
+  <Svg width={42} height={46} viewBox="0 0 52 56">
+    <Polygon
+      points="26,2 50,15 50,41 26,54 2,41 2,15"
+      fill={fill}
+      stroke={stroke}
+      strokeWidth="2"
+    />
+    <Polygon
+      points="26,9 44,19 44,37 26,47 8,37 8,19"
+      fill="none"
+      stroke="rgba(255,255,255,0.3)"
+      strokeWidth="1"
+    />
+    <Circle cx="26" cy="28" r="8" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.5" />
+  </Svg>
+);
+
+// ─── Tier Card ────────────────────────────────────────────────────────────────
+const TierCardItem = ({ tier, isCurrentTier }: { tier: typeof TIERS[0]; isCurrentTier: boolean }) => (
+  <View style={[
+    tierStyles.card,
+    { backgroundColor: tier.bg, shadowColor: tier.shadow },
+    isCurrentTier && { borderWidth: 2, borderColor: tier.hexStroke },
+  ]}>
+    <View style={tierStyles.cardInner}>
+      {/* Left: Icon + Info */}
+      <View style={tierStyles.leftCol}>
+        <HexIcon fill={tier.hexFill} stroke={tier.hexStroke} />
+        <View style={{ flex: 1, marginLeft: 14 }}>
+          {tier.tag && (
+            <View style={[tierStyles.tagBadge, { backgroundColor: tier.tagBg }]}>
+              <AppIcon name="popular" size={11} color="#FFF" fill="#FFF" />
+              <Text style={tierStyles.tagText} numberOfLines={1}>{tier.tag}</Text>
+            </View>
+          )}
+          <Text style={[tierStyles.tierName, { color: tier.text }]}>{tier.name}</Text>
+          <Text style={[tierStyles.tierDesc, { color: tier.subtext }]}>{tier.description}</Text>
+        </View>
+      </View>
+
+      {/* Divider */}
+      <View style={[tierStyles.divider, { backgroundColor: tier.divider }]} />
+
+      {/* Right: Benefits */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={tierStyles.benefitsList}
+      >
+        {tier.benefits.map((b, i) => (
+          <BenefitItem key={i} icon={b.icon} label={b.label} iconBg={tier.iconBg} textColor={tier.text} />
+        ))}
+      </ScrollView>
+    </View>
+  </View>
+);
+
+const tierStyles = StyleSheet.create({
+  card: {
+    borderRadius: 16,
+    marginBottom: 12,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+    overflow: 'hidden',
+  },
+  cardInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    minHeight: 90,
+  },
+  leftCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 155,
+  },
+  tagBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 20,
+    marginBottom: 4,
+    gap: 3,
+    flexWrap: 'nowrap',
+    flexShrink: 0,
+  },
+  tagText: {
+    color: '#FFF',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  tierName: {
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    marginBottom: 1,
+  },
+  tierDesc: {
+    fontSize: 10,
+    fontWeight: '400',
+    lineHeight: 14,
+  },
+  divider: {
+    width: 1,
+    height: 56,
+    marginHorizontal: 12,
+    borderRadius: 1,
+  },
+  benefitsList: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 15,
+    paddingRight: 6,
+  },
+  benefitItem: { alignItems: 'center', minWidth: 50 },
+  benefitIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  benefitLabel: {
+    fontSize: 9,
+    textAlign: 'center',
+    fontWeight: '500',
+    lineHeight: 12,
+  },
+});
+
 // ─── Coin Badge ───────────────────────────────────────────────────────────────
 const CoinBadge = () => (
   <View style={styles.coinOuter}>
     <View style={styles.coinInner}>
-      <AppIcon name="points" size={36} color="#FFFFFF" fill="#FFFFFF" />
-      <Text style={styles.coinTop}>SEATSIP</Text>
-      <Text style={styles.coinBottom}>DIGITAL DETOX CAFE</Text>
+      <Image 
+        source={require('../../assets/images/coin_logo.png')} 
+        style={styles.coinLogo} 
+        resizeMode="contain" 
+      />
     </View>
   </View>
 );
@@ -59,104 +281,129 @@ const EarnRow = ({ item, isLast }: { item: any, isLast: boolean }) => (
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function RewardsScreen() {
   const navigation = useNavigation();
+  const { user, refreshUser } = useAuth();
+  const points = user?.loyalty_points ?? 0;
+  const progress = useMemo(() => {
+    const span = Math.max(1, MAX_TIER_POINTS - MIN_POINTS);
+    return Math.min(1, Math.max(0, (points - MIN_POINTS) / span));
+  }, [points]);
+  const ptsToNext = Math.max(0, MAX_TIER_POINTS - points);
+  const [activity, setActivity] = useState<{ id: string; title: string; subtitle: string; amount: string }[]>([]);
+
+  useEffect(() => {
+    refreshUser();
+    usersApi
+      .walletTransactions()
+      .then((r) => {
+        const rows = (r.data?.data || []) as { id: string; description?: string; type?: string; amount?: number; created_at?: string }[];
+        setActivity(
+          rows.slice(0, 20).map((row) => ({
+            id: row.id,
+            title: row.description || row.type || 'Activity',
+            subtitle: row.created_at ? new Date(row.created_at).toLocaleString() : '',
+            amount:
+              row.type === 'TOPUP' || row.type === 'REFUND'
+                ? `+₹${Math.abs(Number(row.amount) || 0).toFixed(0)}`
+                : `-₹${Math.abs(Number(row.amount) || 0).toFixed(0)}`,
+          }))
+        );
+      })
+      .catch(() => setActivity([]));
+  }, [refreshUser]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={BG} />
+    <ImageBackground 
+      source={require('../../assets/images/app_bg.png')} 
+      style={styles.container}
+      resizeMode="cover"
+    >
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backBtn} 
-          activeOpacity={0.75}
-          onPress={() => navigation.goBack()}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
         >
-          <AppIcon name="back" size={20} color="#1A1A1A" />
-        </TouchableOpacity>
-        <View>
-          <Text style={styles.headerTitle}>Rewards</Text>
-          <Text style={styles.headerSub}>Earn points & unlock exciting benefits</Text>
-        </View>
-      </View>
+          {/* ── Balance Card ── */}
+          <View style={styles.balanceCard}>
+            {/* Decorative rings */}
+            <View style={styles.ringLarge} />
+            <View style={styles.ringSmall} />
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── Balance Card ── */}
-        <View style={styles.balanceCard}>
-          {/* Decorative rings */}
-          <View style={styles.ringLarge} />
-          <View style={styles.ringSmall} />
-
-          <View style={styles.balanceLeft}>
-            <Text style={styles.balanceLabel}>Your Balance</Text>
-            <Text style={styles.balanceAmount}>{CURRENT_POINTS}</Text>
-            <Text style={styles.balanceUnit}>Points</Text>
-          </View>
-
-          <CoinBadge />
-        </View>
-
-        {/* ── Member Tier ── */}
-        <View style={styles.tierCard}>
-          <View style={styles.tierTop}>
-            {/* Silver medal */}
-            <View style={styles.medalWrap}>
-              <View style={styles.medalRibbon}>
-                <View style={[styles.ribbonStripe, { backgroundColor: '#C0392B' }]} />
-                <View style={[styles.ribbonStripe, { backgroundColor: '#FFFFFF' }]} />
-                <View style={[styles.ribbonStripe, { backgroundColor: '#2980B9' }]} />
-              </View>
-              <View style={styles.medal}>
-                <Text style={styles.medalNum}>2</Text>
-              </View>
+            <View style={styles.balanceLeft}>
+              <Text style={styles.balanceLabel}>Your Balance</Text>
+              <Text style={styles.balanceAmount}>{points}</Text>
+              <Text style={styles.balanceUnit}>Points</Text>
             </View>
 
-            <Text style={styles.tierName}>Silver Member</Text>
-
-            <View style={styles.tierNext}>
-              <View style={styles.tierNextRow}><Text style={styles.tierNextLabel}>Next:</Text><AppIcon name="trending" size={13} color="#B8860B" /><Text style={styles.tierNextLabel}>Gold</Text></View>
-              <Text style={styles.tierNextPts}>680 pts away</Text>
-            </View>
+            <CoinBadge />
           </View>
 
-          {/* Progress bar */}
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${PROGRESS * 100}%` }]} />
-          </View>
-          <View style={styles.progressLabels}>
-            <Text style={styles.progressLabel}>{MIN_POINTS}</Text>
-            <Text style={styles.progressLabel}>{MAX_POINTS}</Text>
-          </View>
-        </View>
-
-        {/* ── Ways to Earn ── */}
-        <Text style={styles.sectionTitle}>Ways to Earn</Text>
-
-        <View style={styles.earnCard}>
-          {WAYS_TO_EARN.map((item, index) => (
-            <EarnRow key={item.id} item={item} isLast={index === WAYS_TO_EARN.length - 1} />
+          {/* ── Membership Tiers ── */}
+          <Text style={styles.sectionTitle}>Membership Tiers</Text>
+          {TIERS.map((tier) => (
+            <TierCardItem
+              key={tier.id}
+              tier={tier}
+              isCurrentTier={
+                tier.id === 'platinum' ? points >= 4000 :
+                tier.id === 'gold' ? points >= 2000 :
+                true
+              }
+            />
           ))}
-        </View>
 
-        {/* ── CTA Button ── */}
-        <TouchableOpacity style={styles.ctaBtn} activeOpacity={0.85}>
-          <AppIcon name="rewards" size={18} color="#fff" />
-          <Text style={styles.ctaText}>View All Rewards</Text>
-        </TouchableOpacity>
+          {/* ── Ways to Earn ── */}
+          <Text style={styles.sectionTitle}>Recent activity</Text>
+          <View style={styles.earnCard}>
+            {activity.length === 0 ? (
+              <Text style={styles.emptyActivity}>No wallet activity yet. Orders and top-ups show here.</Text>
+            ) : (
+              activity.map((row, index) => (
+                <View
+                  key={row.id}
+                  style={[styles.activityRow, index < activity.length - 1 && styles.earnRowBorder]}
+                >
+                  <View style={styles.activityText}>
+                    <Text style={styles.earnLabel}>{row.title}</Text>
+                    <Text style={styles.earnPts}>{row.subtitle}</Text>
+                  </View>
+                  <Text style={styles.activityAmt}>{row.amount}</Text>
+                </View>
+              ))
+            )}
+          </View>
 
-        <View style={{ height: 24 }} />
-      </ScrollView>
-    </SafeAreaView>
+          <Text style={styles.sectionTitle}>Ways to Earn</Text>
+
+          <View style={styles.earnCard}>
+            {WAYS_TO_EARN.map((item, index) => (
+              <EarnRow key={item.id} item={item} isLast={index === WAYS_TO_EARN.length - 1} />
+            ))}
+          </View>
+
+          {/* ── CTA Button ── */}
+          <TouchableOpacity 
+            style={styles.ctaBtn} 
+            activeOpacity={0.85}
+            onPress={() => (navigation as any).navigate('AllRewards')}
+          >
+            <AppIcon name="rewards" size={18} color="#fff" />
+            <Text style={styles.ctaText}>View All Rewards</Text>
+          </TouchableOpacity>
+
+          <View style={{ height: 24 }} />
+        </ScrollView>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  container: { flex: 1, width: '100%' },
   safeArea: {
     flex: 1,
-    backgroundColor: BG,
   },
 
   // Header
@@ -190,7 +437,7 @@ const styles = StyleSheet.create({
   },
   headerSub: { fontSize: 13, color: '#888', marginTop: 1 },
 
-  scrollContent: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 100 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 100, width: '100%' },
 
   // Balance card
   balanceCard: {
@@ -249,7 +496,7 @@ const styles = StyleSheet.create({
     width: 130,
     height: 130,
     borderRadius: 65,
-    backgroundColor: '#4A2E14',
+    backgroundColor: '#2A1703',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -264,38 +511,20 @@ const styles = StyleSheet.create({
     width: 108,
     height: 108,
     borderRadius: 54,
-    backgroundColor: '#3A2010',
+    backgroundColor: '#2A1703',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#5A3218',
   },
-  coinStar: {
-    fontSize: 36,
-    color: '#FFFFFF',
-    fontWeight: '900',
-    lineHeight: 40,
-  },
-  coinTop: {
-    position: 'absolute',
-    top: 14,
-    fontSize: 8,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 1.5,
-  },
-  coinBottom: {
-    position: 'absolute',
-    bottom: 14,
-    fontSize: 5.5,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.7)',
-    letterSpacing: 0.5,
+  coinLogo: {
+    width: 90,
+    height: 90,
   },
 
   // Tier card
   tierCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FAF3E8',
     borderRadius: 20,
     padding: 20,
     marginBottom: 24,
@@ -389,7 +618,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   earnCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FAF3E8',
     borderRadius: 20,
     marginBottom: 24,
     shadowColor: '#000',
@@ -434,6 +663,25 @@ const styles = StyleSheet.create({
   chevron: {
     fontSize: 22,
     color: '#CCCCCC',
+  },
+  emptyActivity: {
+    padding: 20,
+    fontSize: 14,
+    color: '#888',
+    textAlign: 'center',
+  },
+  activityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    justifyContent: 'space-between',
+  },
+  activityText: { flex: 1, marginRight: 12 },
+  activityAmt: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A1A1A',
   },
 
   // CTA

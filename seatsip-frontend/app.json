@@ -2,6 +2,7 @@
   "expo": {
     "name": "SeatSip",
     "slug": "seatsip",
+    "scheme": "seatsip",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -17,7 +18,10 @@
       "bundleIdentifier": "com.seatsip.app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "SeatSip uses your location to auto-fill your delivery address.",
-        "NSPhotoLibraryUsageDescription": "SeatSip lets you choose a photo for your profile."
+        "NSPhotoLibraryUsageDescription": "SeatSip lets you choose a photo for your profile.",
+        "NSCameraUsageDescription": "SeatSip lets you take a photo for your profile picture.",
+        "NSFaceIDUsageDescription": "SeatSip uses Face ID to secure your account.",
+        "ITSAppUsesNonExemptEncryption": true
       }
     },
     "android": {
@@ -30,12 +34,27 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "CAMERA",
-        "READ_EXTERNAL_STORAGE"
-      ]
+        "READ_EXTERNAL_STORAGE",
+        "VIBRATE",
+        "USE_BIOMETRIC"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": ""
+        }
+      }
     },
     "plugins": [
       "expo-font",
       "expo-location",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/BebasNeue-Regular.otf"
+          ]
+        }
+      ],
       [
         "expo-image-picker",
         {
@@ -49,6 +68,9 @@
           "color": "#C8956C"
         }
       ]
-    ]
+    ],
+    "web": {
+      "bundler": "metro"
+    }
   }
 }

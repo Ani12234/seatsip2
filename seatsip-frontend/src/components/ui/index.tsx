@@ -94,7 +94,7 @@ export const StarRating: React.FC<{ rating: number; count?: number; size?: numbe
 export const Skeleton: React.FC<{ width?: number | string; height?: number; radius?: number; style?: ViewStyle }> = ({
   width = '100%', height = 16, radius = Radius.sm, style,
 }) => (
-  <View style={[{ width: width as any, height, borderRadius: radius, backgroundColor: Colors.creamDark }, style]} />
+  <View style={[{ width: width as any, height, borderRadius: radius, backgroundColor: Colors.accentLight }, style]} />
 );
 
 // ===== PRICE LEVEL =====

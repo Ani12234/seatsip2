@@ -1,281 +1,397 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Switch,
   StatusBar,
   SafeAreaView,
   Alert,
   Platform,
+  Linking,
+  ImageBackground,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useCallback } from 'react';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../../context/AuthContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../../navigation/types';
 import AppIcon from '../../components/ui/AppIcon';
+import { useAppTheme } from '../../theme/ThemeContext';
+import { SEATSIP_PRIVACY_POLICY_URL, SEATSIP_TERMS_URL } from '../../constants/legal';
+import { ADDRESS_STORAGE_KEY } from '../../constants/storageKeys';
+import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { safeLog } from '../../security/safeLog';
+import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
+
+// Refactored Components
+import { SectionHeader, ToggleRow, ArrowRow, Divider, Icon } from '../../components/settings/SettingsRows';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-const Icon = ({ emoji, bg }: { emoji: string; bg: string }) => (
-  <View style={[styles.iconWrapper, { backgroundColor: bg }]}>
-    <AppIcon name={emoji} size={20} color="#333" />
-  </View>
-);
-
-const SectionHeader = ({ title }: { title: string }) => (
-  <Text style={styles.sectionHeader}>{title}</Text>
-);
-
-const ToggleRow = ({ icon, bg, title, subtitle, value, onValueChange }: { 
-  icon: string; bg: string; title: string; subtitle: string; value: boolean; onValueChange: (v: boolean) => void 
-}) => (
-  <View style={styles.row}>
-    <Icon emoji={icon} bg={bg} />
-    <View style={styles.rowText}>
-      <Text style={styles.rowTitle}>{title}</Text>
-      <Text style={styles.rowSubtitle}>{subtitle}</Text>
-    </View>
-    <Switch
-      value={value}
-      onValueChange={onValueChange}
-      trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
-      thumbColor="#FFFFFF"
-      ios_backgroundColor="#E0E0E0"
-    />
-  </View>
-);
-
-const ArrowRow = ({ icon, bg, title, subtitle, rightText, rightColor, onPress }: { 
-  icon: string; bg: string; title: string; subtitle: string; rightText?: string; rightColor?: string; onPress: () => void 
-}) => (
-  <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
-    <Icon emoji={icon} bg={bg} />
-    <View style={styles.rowText}>
-      <Text style={styles.rowTitle}>{title}</Text>
-      <Text style={styles.rowSubtitle}>{subtitle}</Text>
-    </View>
-    <View style={styles.rowRight}>
-      {rightText ? (
-        <Text style={[styles.rightText, rightColor ? { color: rightColor } : null]}>
-          {rightText}
-        </Text>
-      ) : null}
-      <AppIcon name="›" size={18} color="#C0C0C0" />
-    </View>
-  </TouchableOpacity>
-);
-
-const Divider = () => <View style={styles.divider} />;
-
 export default function SettingsScreen() {
   const navigation = useNavigation<Nav>();
-  const { logout } = useAuth();
-  const [pushNotifications, setPushNotifications] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
-  const [locationServices, setLocationServices] = useState(true);
+  const { requestAccountDeletion } = useAuth();
+  const insets = useSafeAreaInsets();
+  const { darkMode, setDarkMode } = useAppTheme();
+  const [pushNotifications, setPushNotifications] = useState(false);
+  const [locationServices, setLocationServices] = useState(false);
+  const [selectedLangLabel, setSelectedLangLabel] = useState('English');
+  const [savedAddressCount, setSavedAddressCount] = useState<number | null>(null);
 
-  const handleLogout = () => {
-    const performLogout = async () => {
+  useEffect(() => {
+    // Check initial permissions
+    void (async () => {
       try {
-        await logout();
-      } catch (e) {
-        console.error('Logout error', e);
-      }
-    };
+        const [loc, push, savedLangCode] = await Promise.all([
+          Location.getForegroundPermissionsAsync(),
+          Notifications.getPermissionsAsync(),
+          AsyncStorage.getItem('seatsip.language')
+        ]);
+        setLocationServices(loc.status === 'granted');
+        setPushNotifications(push.status === 'granted');
 
-    if (Platform.OS === 'web') {
-      performLogout();
+        if (savedLangCode) {
+          const LANG_LABELS: Record<string, string> = {
+            en: 'English', hi: 'Hindi', es: 'Spanish', fr: 'French',
+            ar: 'Arabic', de: 'German', ja: 'Japanese', zh: 'Chinese',
+            pt: 'Portuguese', ko: 'Korean',
+          };
+          setSelectedLangLabel(LANG_LABELS[savedLangCode] || 'English');
+        }
+      } catch (e) {
+        safeLog.error('Error loading settings', e);
+      }
+    })();
+  }, []);
+
+  // Refresh language label + address count when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      // Refresh language
+      AsyncStorage.getItem('seatsip.language').then((code) => {
+        if (code) {
+          const LANG_LABELS: Record<string, string> = {
+            en: 'English', hi: 'Hindi', es: 'Spanish', fr: 'French',
+            ar: 'Arabic', de: 'German', ja: 'Japanese', zh: 'Chinese',
+            pt: 'Portuguese', ko: 'Korean',
+          };
+          setSelectedLangLabel(LANG_LABELS[code] || 'English');
+        }
+      }).catch(() => {});
+
+      // Load address count
+      AsyncStorage.getItem(ADDRESS_STORAGE_KEY).then((stored) => {
+        if (!stored) { setSavedAddressCount(0); return; }
+        try {
+          const parsed = JSON.parse(stored);
+          const addrs = parsed?.addresses;
+          setSavedAddressCount(Array.isArray(addrs) ? addrs.length : 0);
+        } catch { setSavedAddressCount(0); }
+      }).catch(() => setSavedAddressCount(0));
+    }, [])
+  );
+
+  const togglePushNotifications = async (value: boolean) => {
+    if (value) {
+      try {
+        const { status } = await Notifications.requestPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            'Notifications Required',
+            'Please enable notifications in your device settings to stay updated with your orders.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Settings', onPress: () => void (Platform.OS === 'ios' ? Linking.openURL('app-settings:') : Linking.openSettings()) }
+            ]
+          );
+          setPushNotifications(false);
+          return;
+        }
+        setPushNotifications(true);
+      } catch (e) {
+        safeLog.error('Error requesting notification permissions', e);
+        setPushNotifications(false);
+      }
     } else {
-      Alert.alert('Logout', 'Are you sure you want to sign out?', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: performLogout },
-      ], { cancelable: true });
+      setPushNotifications(false);
     }
   };
 
+  const toggleLocationServices = async (value: boolean) => {
+    if (value) {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            'Location Required',
+            'Please enable location permissions in your device settings to get better recommendations.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Settings', onPress: () => void (Platform.OS === 'ios' ? Linking.openURL('app-settings:') : Linking.openSettings()) }
+            ]
+          );
+          setLocationServices(false);
+          return;
+        }
+        setLocationServices(true);
+      } catch (e) {
+        safeLog.error('Error requesting location permissions', e);
+        setLocationServices(false);
+      }
+    } else {
+      setLocationServices(false);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    const run = async () => {
+      try {
+        await requestAccountDeletion();
+        Alert.alert('Signed out', 'Your account deletion has been scheduled. You can restore it within 30 days using the same email.');
+      } catch (e: any) {
+        Alert.alert('Could not delete account', e?.response?.data?.message || 'Please try again later.');
+      }
+    };
+
+    Alert.alert(
+      'Delete account',
+      'This schedules permanent deletion after 30 days. You can cancel by signing in again before then.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => void run() },
+      ]
+    );
+  };
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8F5F0" />
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <AppIcon name="back" size={18} color="#333" />
-          </TouchableOpacity>
-          <View>
-            <Text style={styles.headerTitle}>Settings</Text>
-            <Text style={styles.headerSubtitle}>Manage your preferences and account.</Text>
+    <ImageBackground 
+      source={require('../../assets/images/app_bg.png')} 
+      style={styles.safe}
+      resizeMode="cover"
+    >
+      <View style={[styles.safe, { paddingTop: insets.top }]}>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+        <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+              <AppIcon name="back" size={18} color="#333" />
+            </TouchableOpacity>
+            <View>
+              <Text style={styles.headerTitle}>Settings</Text>
+              <Text style={styles.headerSubtitle}>Manage your preferences and account.</Text>
+            </View>
           </View>
-        </View>
 
-        {/* GENERAL */}
-        <View style={styles.section}>
-          <SectionHeader title="GENERAL" />
-          <ToggleRow
-            icon="🔔"
-            bg="#FFF3E0"
-            title="Push Notifications"
-            subtitle="Stay updated with order & offers"
-            value={pushNotifications}
-            onValueChange={setPushNotifications}
-          />
-          <Divider />
-          <ToggleRow
-            icon="🌙"
-            bg="#EDE7F6"
-            title="Dark Mode"
-            subtitle="Switch to dark theme"
-            value={darkMode}
-            onValueChange={setDarkMode}
-          />
-          <Divider />
-          <ToggleRow
-            icon="📍"
-            bg="#E8F5E9"
-            title="Location Services"
-            subtitle="Improve recommendations"
-            value={locationServices}
-            onValueChange={setLocationServices}
-          />
-        </View>
+          {/* GENERAL */}
+          <View style={styles.section}>
+            <SectionHeader title="GENERAL" />
+            <ToggleRow
+              icon="🔔"
+              bg="#FFF3E0"
+              title="Push Notifications"
+              subtitle="Stay updated with order & offers"
+              value={pushNotifications}
+              onValueChange={(v) => {
+                void togglePushNotifications(v);
+              }}
+            />
+            <Divider />
+            {/* <ToggleRow
+              icon="🌙"
+              bg="#EDE7F6"
+              title="Dark Mode"
+              subtitle="Switch to dark theme"
+              value={darkMode}
+              onValueChange={(v) => {
+                void setDarkMode(v);
+              }}
+            />
+            <Divider /> */}
+            <ToggleRow
+              icon="📍"
+              bg="#E8F5E9"
+              title="Location Services"
+              subtitle="Improve recommendations"
+              value={locationServices}
+              onValueChange={(v) => {
+                void toggleLocationServices(v);
+              }}
+            />
+          </View>
 
-        {/* ACCOUNT */}
-        <View style={styles.section}>
-          <SectionHeader title="ACCOUNT" />
-          <ArrowRow
-            icon="🔒"
-            bg="#FFF8E1"
-            title="Change Password"
-            subtitle="Update your account password"
-            onPress={() => {}}
-          />
-          <Divider />
-          <ArrowRow
-            icon="🌐"
-            bg="#E3F2FD"
-            title="Language"
-            subtitle="English"
-            onPress={() => {}}
-          />
-          <Divider />
-          <ArrowRow
-            icon="🗑️"
-            bg="#FFEBEE"
-            title="Clear Cache"
-            subtitle="Free up storage space"
-            rightText="24.8 MB"
-            onPress={() => {}}
-          />
-        </View>
+          {/* ACCOUNT */}
+          <View style={styles.section}>
+            <SectionHeader title="ACCOUNT" />
+            <ArrowRow
+              icon="🔒"
+              bg="#FFF8E1"
+              title="Change Password"
+              subtitle="Update your account password"
+              onPress={() => navigation.navigate('ChangePassword')}
+            />
+            <Divider />
+            <ArrowRow
+              icon="🌐"
+              bg="#E3F2FD"
+              title="Language"
+              subtitle={selectedLangLabel}
+              onPress={() => navigation.navigate('LanguageSelect')}
+            />
+            <Divider />
+            <ArrowRow
+              icon="🗑️"
+              bg="#FFEBEE"
+              title="Clear Cache"
+              subtitle="Free up storage space"
+              rightText={
+                savedAddressCount === null ? 'Loading…'
+                : savedAddressCount === 0 ? 'No saved addresses'
+                : `${savedAddressCount} address${savedAddressCount !== 1 ? 'es' : ''}`
+              }
+              onPress={() => {
+                if (savedAddressCount === 0) {
+                  Alert.alert('Nothing to clear', 'Your local cache is already empty.');
+                  return;
+                }
+                Alert.alert(
+                  'Clear Cache?',
+                  `This will permanently remove your ${savedAddressCount} saved address${savedAddressCount !== 1 ? 'es' : ''} and local temporary data. Your account and settings will remain safe.`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Clear Everything',
+                      style: 'destructive',
+                      onPress: () => {
+                        void (async () => {
+                          try {
+                            await AsyncStorage.removeItem(ADDRESS_STORAGE_KEY);
+                            setSavedAddressCount(0);
+                            Alert.alert('Done', 'Your local cache and saved addresses have been cleared.');
+                          } catch (e) {
+                            safeLog.error('Clear cache failed', e);
+                            Alert.alert('Error', 'Could not clear storage. Please try again.');
+                          }
+                        })();
+                      },
+                    },
+                  ],
+                  { cancelable: true }
+                );
+              }}
+            />
+            <Divider />
+            <ArrowRow
+              icon="⚠️"
+              bg="#FFEBEE"
+              title="Delete account"
+              subtitle="Schedule removal (30-day grace period)"
+              rightColor="#C62828"
+              onPress={handleDeleteAccount}
+            />
+          </View>
 
-        {/* ABOUT */}
-        <View style={styles.section}>
-          <SectionHeader title="ABOUT" />
-          <ArrowRow
-            icon="📱"
-            bg="#EDE7F6"
-            title="App Version"
-            subtitle="2.4.1 (Latest)"
-            rightText="Up to date"
-            rightColor="#4CAF50"
-            onPress={() => {}}
-          />
-          <Divider />
-          <ArrowRow
-            icon="📄"
-            bg="#E8EAF6"
-            title="Privacy Policy"
-            subtitle="Read our privacy practices"
-            onPress={() => {}}
-          />
-          <Divider />
-          <ArrowRow
-            icon="📋"
-            bg="#FFF8E1"
-            title="Terms of Service"
-            subtitle="Read our terms and conditions"
-            onPress={() => {}}
-          />
-        </View>
+          {/* ABOUT */}
+          <View style={styles.section}>
+            <SectionHeader title="ABOUT" />
+            <ArrowRow
+              icon="📱"
+              bg="#EDE7F6"
+              title="App Version"
+              subtitle={Constants.expoConfig?.version ? `Expo ${Constants.expoConfig.version}` : 'Development build'}
+              rightText={Constants.expoConfig?.version || '—'}
+              rightColor="#4CAF50"
+              onPress={() =>
+                Alert.alert(
+                  'App version',
+                  Constants.expoConfig?.version
+                    ? `You are running version ${Constants.expoConfig.version}.`
+                    : 'Version info is only available in release builds.'
+                )
+              }
+            />
+            <Divider />
+            <ArrowRow
+              icon="📄"
+              bg="#E8EAF6"
+              title="Privacy Policy"
+              subtitle="Read our privacy practices"
+              onPress={() => navigation.navigate('PrivacyPolicy')}
+            />
+            <Divider />
+            <ArrowRow
+              icon="📋"
+              bg="#FFF8E1"
+              title="Terms of Service"
+              subtitle="Read our terms and conditions"
+              onPress={() => navigation.navigate('Terms')}
+            />
+          </View>
 
-        {/* Log Out */}
-        <View style={[styles.section, styles.logoutSection]}>
-          <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={handleLogout}>
-            <View style={[styles.iconWrapper, { backgroundColor: '#FFEBEE' }]}>
-              <AppIcon name="logout" size={20} color="#C62828" />
-            </View>
-            <View style={styles.rowText}>
-              <Text style={[styles.rowTitle, styles.logoutText]}>Log Out</Text>
-              <Text style={styles.rowSubtitle}>Sign out from your account</Text>
-            </View>
-            <AppIcon name="›" size={18} color="#C62828" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Need help? Visit our{' '}
-            <Text style={styles.footerLink} onPress={() => navigation.navigate('HelpCenter' as any)}>Help Center</Text>
-          </Text>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              Need help? Visit our{' '}
+              <Text style={styles.footerLink} onPress={() => navigation.navigate('HelpCenter' as any)}>Help Center</Text>
+            </Text>
+          </View>
+        </ScrollView>
+      </View>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#F8F5F0',
+    width: '100%',
   },
   container: {
     flex: 1,
-    backgroundColor: '#F8F5F0',
+    width: '100%',
   },
-
-  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 24,
+    paddingTop: 12,
+    paddingBottom: 16,
     gap: 12,
   },
   backBtn: {
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: '#EFEFEF',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  backArrow: {
-    fontSize: 18,
-    color: '#333',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
   },
   headerTitle: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '700',
     color: '#1A1A1A',
     letterSpacing: -0.5,
   },
   headerSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#999',
-    marginTop: 2,
+    marginTop: 1,
   },
-
-  // Section
   section: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     marginHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 12,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -283,87 +399,15 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  sectionHeader: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#AAAAAA',
-    letterSpacing: 1.2,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-
-  // Row
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  iconWrapper: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  iconEmoji: {
-    fontSize: 20,
-  },
-  rowText: {
-    flex: 1,
-  },
-  rowTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 2,
-  },
-  rowSubtitle: {
-    fontSize: 12,
-    color: '#AAAAAA',
-  },
-  rowRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  rightText: {
-    fontSize: 13,
-    color: '#AAAAAA',
-    fontWeight: '500',
-  },
-  chevron: {
-    fontSize: 22,
-    color: '#CCCCCC',
-    fontWeight: '300',
-    lineHeight: 24,
-  },
-
-  // Divider
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: '#F0F0F0',
-    marginLeft: 72,
-  },
-
-  // Logout
-  logoutSection: {},
   logoutText: {
     color: '#E53935',
   },
-  logoutChevron: {
-    color: '#E53935',
-  },
-
-  // Footer
   footer: {
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: 20,
   },
   footerText: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#AAAAAA',
   },
   footerLink: {

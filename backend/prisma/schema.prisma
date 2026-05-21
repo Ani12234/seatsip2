@@ -1,0 +1,370 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    String               @id
+  name                  String
+  email                 String               @unique
+  phone                 String?
+  password_hash         String
+  role                  String               @default("USER")
+  avatar                String?
+  wallet_balance        Float                @default(0)
+  loyalty_points        Int                 @default(0)
+  loyalty_tier          String               @default("silver")
+  failed_login_count    Int                  @default(0)
+  lockout_until         DateTime?
+  last_failed_login_at  DateTime?
+  is_active             Int                  @default(1)
+  google_id             String?              @unique
+  auth_provider         String               @default("password")
+  push_token            String?
+  push_token_updated_at DateTime?
+  deletion_scheduled_at DateTime?
+  terms_accepted_at      DateTime?
+  created_at            DateTime             @default(now())
+  updated_at            DateTime             @updatedAt
+  cart_items            CartItem[]
+  notifications         Notification[]
+  orders                Order[]
+  refresh_tokens        RefreshToken[]
+  reservations          Reservation[]
+  reviews               Review[]
+  wallet_txs            WalletTransaction[]
+  tier_history          LoyaltyTierHistory[]
+  redeemed_rewards      RedeemedReward[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id               String    @id
+  user_id          String
+  token            String    @unique
+  token_hash       String?   @unique
+  family_id        String?
+  replaced_by_hash String?
+  revoked_at       DateTime?
+  expires_at       DateTime
+  created_at       DateTime  @default(now())
+  user             User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([family_id])
+  @@map("refresh_tokens")
+}
+
+model Cafe {
+  id                String         @id
+  name              String
+  slug              String         @unique
+  description       String?
+  address           String
+  city              String
+  latitude          Float?
+  longitude         Float?
+  phone             String?
+  email             String?
+  image_url         String?
+  images            String         @default("[]")
+  rating            Float          @default(0)
+  review_count      Int            @default(0)
+  price_level       Int            @default(2)
+  is_open           Int            @default(1)
+  open_time         String         @default("08:00")
+  close_time        String         @default("22:00")
+  wifi              Int            @default(1)
+  parking           Int            @default(0)
+  pet_friendly      Int            @default(0)
+  moods             String         @default("[]")
+  tags              String         @default("[]")
+  prep_time_minutes Int            @default(15)
+  delivery_fee      Float          @default(0)
+  min_order         Float          @default(0)
+  is_active         Int            @default(1)
+  upi_id            String?
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @updatedAt
+  cart_items        CartItem[]
+  menu_categories   MenuCategory[]
+  menu_items        MenuItem[]
+  orders            Order[]
+  reservations      Reservation[]
+  reviews           Review[]
+  tables            Table[]
+
+  @@index([city])
+  @@map("cafes")
+}
+
+model Table {
+  id           String        @id
+  cafe_id      String
+  table_number String
+  capacity     Int           @default(2)
+  floor        String        @default("Ground")
+  position_x   Float         @default(0)
+  position_y   Float         @default(0)
+  is_available Int           @default(1)
+  created_at   DateTime      @default(now())
+  reservations Reservation[]
+  cafe         Cafe          @relation(fields: [cafe_id], references: [id], onDelete: Cascade)
+
+  @@map("tables")
+}
+
+model MenuCategory {
+  id          String     @id
+  cafe_id     String
+  name        String
+  description String?
+  sort_order  Int        @default(0)
+  is_active   Int        @default(1)
+  created_at  DateTime   @default(now())
+  cafe        Cafe       @relation(fields: [cafe_id], references: [id], onDelete: Cascade)
+  items       MenuItem[]
+
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id                String        @id
+  cafe_id           String
+  category_id       String?
+  name              String
+  description       String?
+  price             Float
+  image_url         String?
+  is_available      Int           @default(1)
+  stock_quantity    Int           @default(999)
+  is_veg            Int           @default(0)
+  is_popular        Int           @default(0)
+  prep_time_minutes Int           @default(10)
+  calories          Int?
+  allergens         String        @default("[]")
+  customizations    String        @default("[]")
+  created_at        DateTime      @default(now())
+  updated_at        DateTime      @updatedAt
+  cart_items        CartItem[]
+  category          MenuCategory? @relation(fields: [category_id], references: [id])
+  cafe              Cafe          @relation(fields: [cafe_id], references: [id], onDelete: Cascade)
+
+  @@index([cafe_id])
+  @@map("menu_items")
+}
+
+model Order {
+  id                   String    @id
+  user_id              String
+  cafe_id              String
+  reservation_id       String?
+  status               String    @default("PENDING")
+  order_type           String    @default("DINE_IN")
+  items                String    @default("[]")
+  subtotal             Float     @default(0)
+  tax                  Float     @default(0)
+  delivery_fee         Float     @default(0)
+  discount             Float     @default(0)
+  total                Float     @default(0)
+  payment_status       String?   @default("PENDING")
+  payment_method       String?
+  razorpay_order_id    String?
+  razorpay_payment_id  String?
+  special_instructions String?
+  estimated_ready_at   DateTime?
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+  cafe                 Cafe      @relation(fields: [cafe_id], references: [id])
+  user                 User      @relation(fields: [user_id], references: [id])
+
+  @@index([user_id])
+  @@index([cafe_id])
+  @@map("orders")
+}
+
+model Reservation {
+  id                String   @id
+  user_id           String
+  cafe_id           String
+  table_id          String?
+  date              String
+  time              String
+  duration_minutes  Int      @default(90)
+  party_size        Int
+  status            String   @default("PENDING")
+  special_requests  String?
+  pre_order_items   String   @default("[]")
+  pre_order_total   Float    @default(0)
+  confirmation_code String   @unique
+  cancelled_at      DateTime?
+  cancellation_reason String?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+  table             Table?   @relation(fields: [table_id], references: [id])
+  cafe              Cafe     @relation(fields: [cafe_id], references: [id])
+  user              User     @relation(fields: [user_id], references: [id])
+
+  @@index([user_id])
+  @@index([cafe_id])
+  @@map("reservations")
+}
+
+model Review {
+  id         String   @id
+  user_id    String
+  cafe_id    String
+  order_id   String?
+  rating     Int
+  comment    String?
+  images     String   @default("[]")
+  created_at DateTime @default(now())
+  cafe       Cafe     @relation(fields: [cafe_id], references: [id])
+  user       User     @relation(fields: [user_id], references: [id])
+
+  @@unique([user_id, cafe_id])
+  @@map("reviews")
+}
+
+model CartItem {
+  id             String   @id
+  user_id        String
+  cafe_id        String
+  menu_item_id   String
+  quantity       Int      @default(1)
+  customizations String   @default("{}")
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+  menu_item      MenuItem @relation(fields: [menu_item_id], references: [id])
+  cafe           Cafe     @relation(fields: [cafe_id], references: [id])
+  user           User     @relation(fields: [user_id], references: [id])
+
+  @@index([user_id])
+  @@map("cart_items")
+}
+
+model WalletTransaction {
+  id                  String   @id
+  user_id             String
+  type                String
+  amount              Float
+  description         String?
+  reference_id        String?
+  balance_after       Float?
+  razorpay_order_id   String?
+  razorpay_payment_id String?
+  created_at          DateTime @default(now())
+  user                User     @relation(fields: [user_id], references: [id])
+
+  @@map("wallet_transactions")
+}
+
+model RevokedToken {
+  jti        String   @id
+  user_id    String
+  expires_at DateTime
+  revoked_at DateTime @default(now())
+  reason     String
+
+  @@index([user_id])
+  @@map("revoked_tokens")
+}
+
+model PaymentEvent {
+  id                  String   @id
+  user_id             String?
+  order_id            String?
+  event_type          String
+  payment_method      String
+  amount              Float
+  refunded_amount     Float    @default(0)
+  razorpay_order_id   String?
+  razorpay_payment_id String?
+  razorpay_refund_id  String?
+  status              String
+  raw_event_id        String?  @unique
+  created_at          DateTime @default(now())
+
+  @@map("payment_events")
+}
+
+model AuditLog {
+  id            String   @id
+  request_id    String
+  user_id       String?
+  action        String
+  resource_type String
+  resource_id   String?
+  ip_address    String?
+  user_agent    String?
+  metadata      String   @default("{}")
+  created_at    DateTime @default(now())
+
+  @@index([user_id])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id         String   @id
+  user_id    String
+  title      String
+  body       String
+  type       String   @default("GENERAL")
+  data       String   @default("{}")
+  is_read    Int      @default(0)
+  created_at DateTime @default(now())
+  user       User     @relation(fields: [user_id], references: [id])
+
+  @@map("notifications")
+}
+
+model LoyaltyTierHistory {
+  id         String   @id
+  user_id    String
+  from_tier  String
+  to_tier    String
+  reason     String   @default("points_threshold")
+  points_at  Int      @default(0)
+  created_at DateTime @default(now())
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("loyalty_tier_history")
+}
+
+model Reward {
+  id             String           @id
+  name           String
+  icon           String
+  category       String           @default("Food & Drink")
+  description    String?
+  points_cost    Int
+  tier_required  String           @default("SILVER")
+  stock          Int              @default(-1) // -1 for unlimited
+  total_redeemed Int              @default(0)
+  is_active      Int              @default(1)
+  created_at     DateTime         @default(now())
+  updated_at     DateTime         @updatedAt
+  redemptions    RedeemedReward[]
+
+  @@map("rewards")
+}
+
+model RedeemedReward {
+  id           String   @id
+  user_id      String
+  reward_id    String
+  points_spent Int
+  created_at   DateTime @default(now())
+  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  reward       Reward   @relation(fields: [reward_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([reward_id])
+  @@map("redeemed_rewards")
+}

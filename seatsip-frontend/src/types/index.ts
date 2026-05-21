@@ -7,6 +7,7 @@ export interface User {
   avatar?: string;
   wallet_balance: number;
   loyalty_points: number;
+  terms_accepted_at?: string;
   created_at: string;
 }
 

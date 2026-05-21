@@ -6,10 +6,11 @@ import {
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { cafesApi, ordersApi } from '../../services/api';
+import { cafesApi, reservationsApi } from '../../services/api';
+import { setPreOrderDraft } from '../../reservation/preOrderDraft';
 import { MenuItem, MenuCategory } from '../../types';
 import { RootStackParamList } from '../../navigation/types';
-import { Colors, Typography, Spacing, Radius, Shadow } from '../../theme';
+import { Spacing, Shadow } from '../../theme';
 import { AppIcon, Button, Divider } from '../../components/ui';
 import Svg, { Path } from 'react-native-svg';
 
@@ -31,11 +32,12 @@ export default function PreOrderMenuScreen() {
   const { params } = useRoute<Route>();
   const insets = useSafeAreaInsets();
 
-  const [loading, setLoading] = useState(true);
+  const [menuLoading, setMenuLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [activeTab, setActiveTab] = useState('all');
   const [cart, setCart] = useState<Record<string, { item: MenuItem; quantity: number }>>({});
-  const [view, setView] = useState<'menu' | 'summary' | 'success'>('menu');
+  const [view, setView] = useState<'menu' | 'summary'>('menu');
 
   useEffect(() => {
     loadMenu();
@@ -49,7 +51,7 @@ export default function PreOrderMenuScreen() {
       console.error(e);
       Alert.alert('Error', 'Failed to load menu');
     } finally {
-      setLoading(false);
+      setMenuLoading(false);
     }
   };
 
@@ -75,65 +77,36 @@ export default function PreOrderMenuScreen() {
   const total = cartSubtotal + tax;
 
   const confirmOrder = async () => {
-    setLoading(true);
+    if (cartCount === 0) {
+      Alert.alert('Empty cart', 'Add at least one item to pre-order.');
+      return;
+    }
+    setSubmitting(true);
     try {
-      // In a real app, we might call a specific pre-order endpoint
-      // For now, we'll simulate the success view as per the HTML
-      setView('success');
-    } catch (e) {
-      Alert.alert('Error', 'Failed to confirm pre-order');
+      const lines = cartItems.map(({ item, quantity }) => ({ menu_item_id: item.id, quantity }));
+      if (params.reservationId) {
+        await reservationsApi.updatePreOrder(params.reservationId, { pre_order_items: lines });
+        Alert.alert('Saved', 'Your pre-order has been updated.');
+        navigation.goBack();
+        return;
+      }
+      setPreOrderDraft(lines);
+      Alert.alert(
+        'Pre-order saved',
+        'When you confirm your table booking, these items will be sent with the reservation.'
+      );
+      navigation.goBack();
+    } catch (e: any) {
+      Alert.alert('Error', e?.response?.data?.message || 'Could not save pre-order');
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  if (loading && view !== 'success') {
+  if (menuLoading) {
     return (
       <View style={[styles.root, styles.center]}>
         <ActivityIndicator color={THEME.primary} />
-      </View>
-    );
-  }
-
-  // ─── SUCCESS VIEW ───────────────────────────────────────────────────────────
-  if (view === 'success') {
-    return (
-      <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <StatusBar barStyle="dark-content" />
-        <ScrollView contentContainerStyle={styles.successContent}>
-          <View style={styles.successHeader}>
-            <View style={styles.successIcon}>
-              <AppIcon name="check" size={42} color={THEME.primary} />
-            </View>
-            <Text style={styles.successTitle}>Pre-order Confirmed!</Text>
-            <Text style={styles.successSub}>
-              Your order will be ready when you arrive at {params.reservationData?.time || '19:00'}. See you soon!
-            </Text>
-          </View>
-
-          <View style={styles.successCard}>
-            {cartItems.map(({ item, quantity }) => (
-              <View key={item.id} style={styles.successRow}>
-                <Text style={styles.successItemTxt}>{item.name} ×{quantity}</Text>
-                <Text style={styles.successPriceTxt}>₹{item.price * quantity}</Text>
-              </View>
-            ))}
-            <Divider style={{ marginVertical: 10 }} />
-            <View style={styles.successRow}>
-              <Text style={[styles.successItemTxt, { fontWeight: '700' }]}>Total Paid at Venue</Text>
-              <Text style={[styles.successPriceTxt, { fontWeight: '700' }]}>₹{total}</Text>
-            </View>
-          </View>
-
-          <Button
-            title="Back to Booking"
-            onPress={() => navigation.navigate('BookingConfirmed', { reservation: params.reservationData })}
-            fullWidth
-            size="lg"
-            style={{ backgroundColor: THEME.primary }}
-            textStyle={{ color: THEME.highlight }}
-          />
-        </ScrollView>
       </View>
     );
   }
@@ -190,6 +163,7 @@ export default function PreOrderMenuScreen() {
           <Button
             title="Confirm Pre-order"
             onPress={confirmOrder}
+            loading={submitting}
             fullWidth
             size="lg"
             style={{ backgroundColor: THEME.primary }}
@@ -503,19 +477,4 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   infoTxt: { flex: 1, fontSize: 13, color: '#5A3E00', lineHeight: 18 },
-  successContent: { padding: Spacing.xl, alignItems: 'center' },
-  successHeader: { alignItems: 'center', marginBottom: 30 },
-  successIcon: {
-    width: 80, height: 80, borderRadius: 40, backgroundColor: THEME.highlight,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-  },
-  successTitle: { fontSize: 22, fontWeight: '800', color: '#2C1A00' },
-  successSub: { fontSize: 14, color: THEME.secondary, textAlign: 'center', marginTop: 8, lineHeight: 20 },
-  successCard: {
-    backgroundColor: '#FFF8F0', borderRadius: 14, padding: 20,
-    width: '100%', borderWidth: 1, borderColor: THEME.border, marginBottom: 30,
-  },
-  successRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  successItemTxt: { fontSize: 13, color: '#2C1A00' },
-  successPriceTxt: { fontSize: 13, fontWeight: '600', color: '#2C1A00' },
 });

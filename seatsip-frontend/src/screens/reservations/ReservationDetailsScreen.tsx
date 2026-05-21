@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,24 +9,34 @@ import {
   SafeAreaView,
   StatusBar,
   Alert,
+  ImageBackground,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../navigation/types';
-import { reservationsApi } from '../../services/api';
+import { reservationsApi, cafesApi } from '../../services/api';
+import { takePreOrderDraft } from '../../reservation/preOrderDraft';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppIcon from '../../components/ui/AppIcon';
 
 type Route = RouteProp<RootStackParamList, 'ReservationDetails'>;
+
+function formatLocationLine(address?: string, city?: string) {
+  const parts = [address?.trim(), city?.trim()].filter(Boolean);
+  return parts.length ? parts.join(', ') : '';
+}
 
 const TIMES = ["09:00", "11:00", "13:00", "15:00", "17:00", "19:00"];
 const PARTY_SIZES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 const ReservationDetailsScreen = () => {
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const route = useRoute<Route>();
-  const { cafeId, cafeName, tableId } = route.params;
+  const { cafeId, cafeName, tableId, cafeAddress: paramAddress } = route.params;
 
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [addressLine, setAddressLine] = useState(paramAddress || '');
 
   // Main state
   const [date, setDate] = useState(getTomorrow());
@@ -39,6 +49,27 @@ const ReservationDetailsScreen = () => {
     d.setDate(d.getDate() + 1);
     return d.toISOString().split('T')[0];
   }
+
+  useEffect(() => {
+    if (paramAddress) {
+      setAddressLine(paramAddress);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await cafesApi.getById(cafeId);
+        if (!cancelled && data.success && data.data) {
+          setAddressLine(formatLocationLine(data.data.address, data.data.city));
+        }
+      } catch {
+        if (!cancelled) setAddressLine('');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cafeId, paramAddress]);
 
   function formatDate(dStr: string) {
     const d = new Date(dStr);
@@ -68,6 +99,7 @@ const ReservationDetailsScreen = () => {
     try {
       setLoading(true);
       console.log("Sending reservation request...", { cafeId, tableId, date, time });
+      const preDraft = takePreOrderDraft();
       const { data } = await reservationsApi.create({
         cafe_id: cafeId,
         table_id: tableId,
@@ -75,6 +107,7 @@ const ReservationDetailsScreen = () => {
         time,
         party_size: partySize,
         special_requests: notes || undefined,
+        pre_order_items: preDraft.length ? preDraft : undefined,
       });
       console.log("Reservation success:", data);
       navigation.replace('BookingConfirmed', { reservation: data.data });
@@ -87,8 +120,13 @@ const ReservationDetailsScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
+    <ImageBackground 
+      source={require('../../assets/images/app_bg.png')} 
+      style={styles.root}
+      resizeMode="cover"
+    >
+      <View style={[styles.safeArea, { paddingTop: insets.top }]}>
+        <StatusBar barStyle="dark-content" />
       
       {/* Header */}
       <View style={styles.header}>
@@ -97,7 +135,9 @@ const ReservationDetailsScreen = () => {
         </TouchableOpacity>
         <View style={styles.headerTextContainer}>
           <Text style={styles.title}>Reservation Details</Text>
-          <Text style={styles.subtitle}>{cafeName} • Koramangala, Bengaluru</Text>
+          <Text style={styles.subtitle}>
+            {addressLine ? `${cafeName} • ${addressLine}` : cafeName}
+          </Text>
         </View>
         <View style={{ width: 40 }} />
       </View>
@@ -241,20 +281,44 @@ const ReservationDetailsScreen = () => {
 
         {/* Confirm Button */}
         {!isEditing && (
-          <TouchableOpacity 
-            style={[styles.confirmBtn, loading && styles.disabledConfirm]} 
-            onPress={handleConfirm}
-            disabled={loading}
-          >
-            <Text style={styles.confirmText}>
-              {loading ? "Confirming..." : "Confirm Reservation"}
-            </Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              activeOpacity={0.85}
+              onPress={() =>
+                navigation.navigate('PreOrderMenu', {
+                  cafeId,
+                  cafeName,
+                  reservationData: {
+                    cafe_id: cafeId,
+                    cafe_name: cafeName,
+                    table_id: tableId,
+                    date,
+                    time,
+                    party_size: partySize,
+                    special_requests: notes,
+                  },
+                })
+              }
+            >
+              <Text style={styles.secondaryBtnText}>Pre-order food (optional)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.confirmBtn, loading && styles.disabledConfirm]}
+              onPress={handleConfirm}
+              disabled={loading}
+            >
+              <Text style={styles.confirmText}>
+                {loading ? 'Confirming...' : 'Confirm Reservation'}
+              </Text>
+            </TouchableOpacity>
+          </>
         )}
         
         <View style={{ height: 40 }} />
       </ScrollView>
-    </SafeAreaView>
+      </View>
+    </ImageBackground>
   );
 };
 
@@ -269,9 +333,10 @@ const PRIMARY = "#8B5E3C";
 const BG = "#F6F3EF";
 
 const styles = StyleSheet.create({
+  root: { flex: 1, width: '100%' },
   safeArea: {
     flex: 1,
-    backgroundColor: BG,
+    width: '100%',
   },
   header: {
     flexDirection: 'row',
@@ -462,6 +527,21 @@ const styles = StyleSheet.create({
   summaryLabel: { color: "#8E8E93", fontSize: 14 },
 
   summaryValue: { fontWeight: "700", color: '#333', fontSize: 14 },
+
+  secondaryBtn: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: PRIMARY,
+    padding: 16,
+    borderRadius: 16,
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  secondaryBtnText: {
+    color: PRIMARY,
+    fontWeight: '700',
+    fontSize: 15,
+  },
 
   confirmBtn: {
     backgroundColor: PRIMARY,

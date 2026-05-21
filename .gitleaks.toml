@@ -1,0 +1,11 @@
+title = "SeatSip gitleaks config"
+
+[allowlist]
+description = "Allow empty env placeholders only"
+regexes = [
+  '''JWT_ACCESS_SECRET_CURRENT=$''',
+  '''JWT_REFRESH_SECRET_CURRENT=$''',
+  '''DB_ENCRYPTION_KEY=$''',
+  '''RAZORPAY_KEY_SECRET=$'''
+]
+

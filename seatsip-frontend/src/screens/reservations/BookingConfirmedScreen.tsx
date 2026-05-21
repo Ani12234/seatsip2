@@ -34,17 +34,17 @@ const ConfettiPiece = ({ style, delay, color }: any) => {
           toValue: 0,
           friction: 6,
           tension: 40,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
         Animated.timing(opacity, {
           toValue: 1,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
         Animated.timing(rotate, {
           toValue: 1,
           duration: 600,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
       ]),
     ]).start();
@@ -81,12 +81,12 @@ const CheckCircle = () => {
         friction: 5,
         tension: 60,
         delay: 200,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
       Animated.timing(checkOpacity, {
         toValue: 1,
         duration: 200,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
     ]).start();
   }, []);
@@ -161,14 +161,14 @@ export default function BookingConfirmedScreen() {
         toValue: 1,
         duration: 500,
         delay: 400,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
       Animated.spring(contentTranslate, {
         toValue: 0,
         friction: 8,
         tension: 50,
         delay: 400,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
     ]).start();
   }, []);
@@ -195,7 +195,7 @@ export default function BookingConfirmedScreen() {
         {/* Main card */}
         <View style={styles.card}>
           {/* Confetti */}
-          <View style={styles.confettiContainer} pointerEvents="none">
+          <View style={[styles.confettiContainer, { pointerEvents: 'none' }]}>
             {confettiPieces.map((piece, index) => (
               <ConfettiPiece
                 key={index}

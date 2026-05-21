@@ -1,0 +1,704 @@
+// ============================================================
+// SeatSip — Production Prisma Schema
+// DB: PostgreSQL (prod) | SQLite (dev via DATABASE_URL)
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"       // swap to "postgresql" in prod
+  url      = env("DATABASE_URL")
+}
+
+// ────────────────────────────────────────────────────────────
+// ENUMS  (stored as String in SQLite; use native enums in PG)
+// ────────────────────────────────────────────────────────────
+
+// User.role            → "USER" | "ADMIN" | "CAFE_OWNER"
+// User.loyalty_tier    → "SILVER" | "GOLD" | "PLATINUM"
+// User.auth_provider   → "password" | "google" | "apple"
+// Order.status         → "PENDING" | "CONFIRMED" | "PREPARING" | "READY" | "COMPLETED" | "CANCELLED" | "REFUNDED"
+// Order.order_type     → "DINE_IN" | "TAKEOUT" | "DELIVERY"
+// Order.payment_status → "PENDING" | "PAID" | "FAILED" | "REFUNDED" | "PARTIAL_REFUND"
+// Order.payment_method → "WALLET" | "UPI" | "CARD" | "CASH"
+// Reservation.status   → "PENDING" | "CONFIRMED" | "SEATED" | "COMPLETED" | "CANCELLED" | "NO_SHOW"
+// WalletTransaction.type → "CREDIT" | "DEBIT" | "REFUND" | "CASHBACK" | "TOPUP"
+// Notification.type    → "ORDER" | "RESERVATION" | "REWARD" | "PROMO" | "SYSTEM"
+
+// ────────────────────────────────────────────────────────────
+// AUTH & USERS
+// ────────────────────────────────────────────────────────────
+
+model User {
+  id                    String    @id
+  name                  String
+  email                 String    @unique
+  phone                 String?
+  phone_verified        Int       @default(0)         // bool
+  email_verified        Int       @default(0)         // bool
+  password_hash         String?                       // nullable for OAuth-only users
+  role                  String    @default("USER")    // USER | ADMIN | CAFE_OWNER
+  avatar                String?
+
+  // Auth
+  auth_provider         String    @default("password")
+  google_id             String?   @unique
+  apple_id              String?   @unique
+
+  // Security
+  failed_login_count    Int       @default(0)
+  lockout_until         DateTime?
+  last_failed_login_at  DateTime?
+  last_login_at         DateTime?
+  last_login_ip         String?
+  password_changed_at   DateTime?
+
+  // Wallet & Loyalty
+  wallet_balance        Float     @default(0)
+  loyalty_points        Int       @default(0)
+  loyalty_tier          String    @default("SILVER") // SILVER | GOLD | PLATINUM
+  lifetime_points       Int       @default(0)        // never decremented; used for tier calc
+
+  // Push / FCM
+  push_token            String?
+  push_token_updated_at DateTime?
+
+  // Account lifecycle
+  is_active             Int       @default(1)
+  deletion_scheduled_at DateTime?
+  deletion_reason       String?
+
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+
+  // Relations
+  refresh_tokens        RefreshToken[]
+  cart_items            CartItem[]
+  orders                Order[]
+  reservations          Reservation[]
+  reviews               Review[]
+  notifications         Notification[]
+  wallet_txs            WalletTransaction[]
+  tier_history          LoyaltyTierHistory[]
+  redeemed_rewards      RedeemedReward[]
+  addresses             UserAddress[]
+
+  @@index([email])
+  @@index([phone])
+  @@index([role])
+  @@map("users")
+}
+
+/// JWT refresh-token rotation with family tracking (prevents reuse attacks)
+model RefreshToken {
+  id               String    @id
+  user_id          String
+  token_hash       String    @unique   // store hash, never plaintext
+  family_id        String              // rotate entire family on reuse detection
+  replaced_by_hash String?
+  device_info      String?             // e.g. "iPhone 15 / iOS 17"
+  ip_address       String?
+  revoked_at       DateTime?
+  expires_at       DateTime
+  created_at       DateTime  @default(now())
+
+  user             User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([family_id])
+  @@map("refresh_tokens")
+}
+
+/// Short-lived revoked access tokens (JTI blocklist, cleared by TTL job)
+model RevokedToken {
+  jti        String   @id
+  user_id    String
+  expires_at DateTime
+  revoked_at DateTime @default(now())
+  reason     String   // "logout" | "password_change" | "suspicious"
+
+  @@index([user_id])
+  @@index([expires_at])  // index for TTL cleanup job
+  @@map("revoked_tokens")
+}
+
+/// Delivery / billing addresses per user
+model UserAddress {
+  id           String   @id
+  user_id      String
+  label        String   @default("Home")  // Home | Work | Other
+  address_line String
+  city         String
+  state        String?
+  pincode      String
+  latitude     Float?
+  longitude    Float?
+  is_default   Int      @default(0)
+  created_at   DateTime @default(now())
+
+  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("user_addresses")
+}
+
+// ────────────────────────────────────────────────────────────
+// CAFES
+// ────────────────────────────────────────────────────────────
+
+model Cafe {
+  id               String   @id
+  name             String
+  slug             String   @unique
+  description      String?
+  address          String
+  city             String
+  state            String?
+  pincode          String?
+  latitude         Float?
+  longitude        Float?
+  timezone         String   @default("Asia/Kolkata")
+
+  // Contact
+  phone            String?
+  email            String?
+  website          String?
+  instagram        String?
+
+  // Media
+  image_url        String?
+  images           String   @default("[]")   // JSON string[]
+
+  // Ratings (denormalised; updated via trigger or job)
+  rating           Float    @default(0)
+  review_count     Int      @default(0)
+
+  // Characteristics
+  price_level      Int      @default(2)       // 1–4
+  moods            String   @default("[]")   // JSON string[]  e.g. ["work","date"]
+  tags             String   @default("[]")   // JSON string[]  e.g. ["wifi","vegan"]
+  amenities        String   @default("[]")   // JSON string[]  e.g. ["parking","ac"]
+
+  // Amenity flags (indexed for filter queries)
+  wifi             Int      @default(1)
+  parking          Int      @default(0)
+  pet_friendly     Int      @default(0)
+  outdoor_seating  Int      @default(0)
+  serves_alcohol   Int      @default(0)
+
+  // Operations
+  is_open          Int      @default(1)
+  is_active        Int      @default(1)
+  open_time        String   @default("08:00")
+  close_time       String   @default("22:00")
+  prep_time_minutes Int     @default(15)
+
+  // Commerce
+  delivery_fee     Float    @default(0)
+  min_order        Float    @default(0)
+  upi_id           String?
+  gstin            String?
+
+  // Capacity
+  total_seats      Int      @default(0)      // sum of table.capacity; denormalised
+
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  // Relations
+  menu_categories  MenuCategory[]
+  menu_items       MenuItem[]
+  tables           Table[]
+  orders           Order[]
+  reservations     Reservation[]
+  reviews          Review[]
+  cart_items       CartItem[]
+  operating_hours  CafeOperatingHours[]
+  promotions       Promotion[]
+
+  @@index([city])
+  @@index([slug])
+  @@index([is_active, city])
+  @@map("cafes")
+}
+
+/// Per-day operating hours — overrides the default open_time / close_time
+model CafeOperatingHours {
+  id         String  @id
+  cafe_id    String
+  day_of_week Int               // 0=Sun … 6=Sat
+  open_time  String
+  close_time String
+  is_closed  Int     @default(0)
+
+  cafe       Cafe    @relation(fields: [cafe_id], references: [id], onDelete: Cascade)
+
+  @@unique([cafe_id, day_of_week])
+  @@map("cafe_operating_hours")
+}
+
+// ────────────────────────────────────────────────────────────
+// TABLES
+// ────────────────────────────────────────────────────────────
+
+model Table {
+  id           String        @id
+  cafe_id      String
+  table_number String
+  capacity     Int           @default(2)
+  min_capacity Int           @default(1)
+  floor        String        @default("Ground")
+  section      String?       // "Window" | "Outdoor" | "Private"
+  position_x   Float         @default(0)
+  position_y   Float         @default(0)
+  is_available Int           @default(1)
+  notes        String?       // e.g. "Near speaker, loud"
+  created_at   DateTime      @default(now())
+
+  cafe         Cafe          @relation(fields: [cafe_id], references: [id], onDelete: Cascade)
+  reservations Reservation[]
+
+  @@unique([cafe_id, table_number])
+  @@index([cafe_id, is_available])
+  @@map("tables")
+}
+
+// ────────────────────────────────────────────────────────────
+// MENU
+// ────────────────────────────────────────────────────────────
+
+model MenuCategory {
+  id          String     @id
+  cafe_id     String
+  name        String
+  description String?
+  image_url   String?
+  sort_order  Int        @default(0)
+  is_active   Int        @default(1)
+  created_at  DateTime   @default(now())
+  updated_at  DateTime   @updatedAt
+
+  cafe        Cafe       @relation(fields: [cafe_id], references: [id], onDelete: Cascade)
+  items       MenuItem[]
+
+  @@unique([cafe_id, name])
+  @@index([cafe_id, sort_order])
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id                String          @id
+  cafe_id           String
+  category_id       String?
+  name              String
+  description       String?
+  price             Float
+  compare_price     Float?          // crossed-out "was" price
+  image_url         String?
+  images            String          @default("[]")
+
+  // Dietary / discovery
+  is_veg            Int             @default(0)
+  is_vegan          Int             @default(0)
+  is_gluten_free    Int             @default(0)
+  is_popular        Int             @default(0)
+  is_featured       Int             @default(0)
+  spice_level       Int             @default(0)  // 0–3
+  calories          Int?
+  allergens         String          @default("[]")  // JSON string[]
+  customizations    String          @default("[]")  // JSON [{name, options[]}]
+  tags              String          @default("[]")
+
+  // Availability
+  is_available      Int             @default(1)
+  stock_quantity    Int             @default(-1)    // -1 = unlimited
+  available_from    String?         // "HH:MM" time-of-day gate
+  available_until   String?
+
+  prep_time_minutes Int             @default(10)
+  sort_order        Int             @default(0)
+
+  created_at        DateTime        @default(now())
+  updated_at        DateTime        @updatedAt
+
+  category          MenuCategory?   @relation(fields: [category_id], references: [id])
+  cafe              Cafe            @relation(fields: [cafe_id], references: [id], onDelete: Cascade)
+  cart_items        CartItem[]
+  order_items       OrderItem[]
+
+  @@index([cafe_id, is_available])
+  @@index([cafe_id, category_id])
+  @@map("menu_items")
+}
+
+// ────────────────────────────────────────────────────────────
+// CART
+// ────────────────────────────────────────────────────────────
+
+model CartItem {
+  id             String   @id
+  user_id        String
+  cafe_id        String
+  menu_item_id   String
+  quantity       Int      @default(1)
+  unit_price     Float                    // snapshot of price at add-time
+  customizations String   @default("{}") // JSON selections
+  notes          String?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  user           User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  cafe           Cafe     @relation(fields: [cafe_id], references: [id], onDelete: Cascade)
+  menu_item      MenuItem @relation(fields: [menu_item_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, cafe_id, menu_item_id, customizations])
+  @@index([user_id, cafe_id])
+  @@map("cart_items")
+}
+
+// ────────────────────────────────────────────────────────────
+// ORDERS  (line items in own table — no JSON blob)
+// ────────────────────────────────────────────────────────────
+
+model Order {
+  id                   String      @id
+  user_id              String
+  cafe_id              String
+  reservation_id       String?
+
+  // Status
+  status               String      @default("PENDING")
+  order_type           String      @default("DINE_IN")
+
+  // Pricing (all in INR paise-compatible floats)
+  subtotal             Float       @default(0)
+  tax                  Float       @default(0)
+  tax_rate             Float       @default(0.05)
+  delivery_fee         Float       @default(0)
+  discount             Float       @default(0)
+  loyalty_discount     Float       @default(0)
+  total                Float       @default(0)
+
+  // Payment
+  payment_status       String      @default("PENDING")
+  payment_method       String?
+  razorpay_order_id    String?     @unique
+  razorpay_payment_id  String?     @unique
+  razorpay_signature   String?
+  refunded_amount      Float       @default(0)
+
+  // Loyalty earned
+  points_earned        Int         @default(0)
+  points_redeemed      Int         @default(0)
+
+  // Misc
+  special_instructions String?
+  delivery_address_id  String?     // FK to UserAddress
+  table_number         String?     // for DINE_IN display
+  estimated_ready_at   DateTime?
+  ready_at             DateTime?   // actual
+  completed_at         DateTime?
+  cancelled_at         DateTime?
+  cancellation_reason  String?
+
+  created_at           DateTime    @default(now())
+  updated_at           DateTime    @updatedAt
+
+  user                 User        @relation(fields: [user_id], references: [id])
+  cafe                 Cafe        @relation(fields: [cafe_id], references: [id])
+  items                OrderItem[]
+
+  @@index([user_id, created_at])
+  @@index([cafe_id, status])
+  @@index([razorpay_order_id])
+  @@map("orders")
+}
+
+/// Normalised order line items (replaces the JSON `items` blob)
+model OrderItem {
+  id              String   @id
+  order_id        String
+  menu_item_id    String
+  name            String               // snapshot
+  description     String?              // snapshot
+  unit_price      Float                // price at time of order
+  quantity        Int
+  customizations  String   @default("{}") // JSON snapshot
+  subtotal        Float                // unit_price * quantity
+  notes           String?
+
+  order           Order    @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  menu_item       MenuItem @relation(fields: [menu_item_id], references: [id])
+
+  @@index([order_id])
+  @@map("order_items")
+}
+
+// ────────────────────────────────────────────────────────────
+// RESERVATIONS
+// ────────────────────────────────────────────────────────────
+
+model Reservation {
+  id                String   @id
+  user_id           String
+  cafe_id           String
+  table_id          String?
+
+  date              String               // "YYYY-MM-DD"
+  time              String               // "HH:MM"
+  duration_minutes  Int      @default(90)
+  party_size        Int
+
+  status            String   @default("PENDING")
+  special_requests  String?
+  confirmation_code String   @unique
+
+  // Pre-order snapshot (linked OrderItems via reservation_id on Order)
+  pre_order_items   String   @default("[]")  // lightweight snapshot for display
+  pre_order_total   Float    @default(0)
+
+  // Check-in
+  checked_in_at     DateTime?
+  checked_in_by     String?   // staff user_id
+
+  // Cancellation
+  cancelled_at      DateTime?
+  cancellation_reason String?
+  cancellation_fee  Float    @default(0)
+
+  // Reminders
+  reminder_sent_24h Int      @default(0)
+  reminder_sent_1h  Int      @default(0)
+
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  user              User     @relation(fields: [user_id], references: [id])
+  cafe              Cafe     @relation(fields: [cafe_id], references: [id])
+  table             Table?   @relation(fields: [table_id], references: [id])
+
+  @@index([user_id])
+  @@index([cafe_id, date, status])
+  @@index([confirmation_code])
+  @@map("reservations")
+}
+
+// ────────────────────────────────────────────────────────────
+// REVIEWS
+// ────────────────────────────────────────────────────────────
+
+model Review {
+  id          String   @id
+  user_id     String
+  cafe_id     String
+  order_id    String?            // anchor review to a verified order
+  rating      Int                // 1–5
+  comment     String?
+  images      String   @default("[]")  // JSON string[]
+  is_flagged  Int      @default(0)
+  flagged_reason String?
+  is_published Int     @default(1)
+  helpful_count Int    @default(0)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  user        User     @relation(fields: [user_id], references: [id])
+  cafe        Cafe     @relation(fields: [cafe_id], references: [id])
+
+  @@unique([user_id, cafe_id])   // one review per user per cafe
+  @@index([cafe_id, is_published])
+  @@map("reviews")
+}
+
+// ────────────────────────────────────────────────────────────
+// WALLET
+// ────────────────────────────────────────────────────────────
+
+model WalletTransaction {
+  id                  String   @id
+  user_id             String
+  type                String              // CREDIT | DEBIT | REFUND | CASHBACK | TOPUP
+  amount              Float
+  balance_after       Float
+  description         String?
+  reference_id        String?             // order_id or reservation_id
+  reference_type      String?             // "ORDER" | "RESERVATION" | "TOPUP" | "REWARD"
+  razorpay_order_id   String?
+  razorpay_payment_id String?
+  status              String   @default("SUCCESS") // SUCCESS | PENDING | FAILED
+  created_at          DateTime @default(now())
+
+  user                User     @relation(fields: [user_id], references: [id])
+
+  @@index([user_id, created_at])
+  @@index([reference_id])
+  @@map("wallet_transactions")
+}
+
+// ────────────────────────────────────────────────────────────
+// PAYMENTS
+// ────────────────────────────────────────────────────────────
+
+model PaymentEvent {
+  id                  String   @id
+  user_id             String?
+  order_id            String?
+  event_type          String              // "payment.captured" | "payment.failed" | "refund.created" …
+  payment_method      String
+  amount              Float
+  refunded_amount     Float    @default(0)
+  razorpay_order_id   String?
+  razorpay_payment_id String?
+  razorpay_refund_id  String?
+  status              String              // SUCCESS | FAILED | REFUNDED
+  raw_event_id        String?  @unique   // Razorpay webhook event id (idempotency)
+  raw_payload         String?            // full JSON for debugging
+  created_at          DateTime @default(now())
+
+  @@index([user_id])
+  @@index([order_id])
+  @@map("payment_events")
+}
+
+// ────────────────────────────────────────────────────────────
+// LOYALTY & REWARDS
+// ────────────────────────────────────────────────────────────
+
+model LoyaltyTierHistory {
+  id         String   @id
+  user_id    String
+  from_tier  String
+  to_tier    String
+  reason     String   @default("points_threshold") // "points_threshold" | "admin" | "expiry"
+  points_at  Int      @default(0)
+  created_at DateTime @default(now())
+
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("loyalty_tier_history")
+}
+
+model Reward {
+  id             String           @id
+  name           String
+  icon           String
+  category       String           @default("Food & Drink")
+  description    String?
+  terms          String?                              // fine print
+  points_cost    Int
+  tier_required  String           @default("SILVER") // SILVER | GOLD | PLATINUM
+  stock          Int              @default(-1)        // -1 = unlimited
+  total_redeemed Int              @default(0)
+  is_active      Int              @default(1)
+  valid_from     DateTime?
+  valid_until    DateTime?
+  cafe_id        String?                              // null = all cafes
+  created_at     DateTime         @default(now())
+  updated_at     DateTime         @updatedAt
+
+  redemptions    RedeemedReward[]
+
+  @@index([is_active, tier_required])
+  @@map("rewards")
+}
+
+model RedeemedReward {
+  id           String   @id
+  user_id      String
+  reward_id    String
+  order_id     String?             // if applied to an order
+  points_spent Int
+  status       String   @default("ACTIVE") // ACTIVE | USED | EXPIRED
+  expires_at   DateTime?
+  used_at      DateTime?
+  created_at   DateTime @default(now())
+
+  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  reward       Reward   @relation(fields: [reward_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([reward_id])
+  @@map("redeemed_rewards")
+}
+
+// ────────────────────────────────────────────────────────────
+// PROMOTIONS
+// ────────────────────────────────────────────────────────────
+
+model Promotion {
+  id              String   @id
+  cafe_id         String?             // null = platform-wide
+  code            String   @unique
+  name            String
+  description     String?
+  discount_type   String              // "PERCENT" | "FLAT" | "FREE_ITEM"
+  discount_value  Float
+  max_discount    Float?              // cap for PERCENT
+  min_order_value Float    @default(0)
+  usage_limit     Int      @default(-1) // total redemptions; -1 = unlimited
+  per_user_limit  Int      @default(1)
+  total_used      Int      @default(0)
+  is_active       Int      @default(1)
+  valid_from      DateTime
+  valid_until     DateTime
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  cafe            Cafe?    @relation(fields: [cafe_id], references: [id], onDelete: SetNull)
+
+  @@index([code])
+  @@index([is_active, valid_until])
+  @@map("promotions")
+}
+
+// ────────────────────────────────────────────────────────────
+// NOTIFICATIONS
+// ────────────────────────────────────────────────────────────
+
+model Notification {
+  id              String   @id
+  user_id         String
+  title           String
+  body            String
+  type            String   @default("GENERAL") // ORDER | RESERVATION | REWARD | PROMO | SYSTEM
+  data            String   @default("{}")      // JSON deep-link payload
+  channel         String   @default("PUSH")    // PUSH | IN_APP | EMAIL | SMS
+  is_read         Int      @default(0)
+  read_at         DateTime?
+  push_sent       Int      @default(0)
+  push_sent_at    DateTime?
+  created_at      DateTime @default(now())
+
+  user            User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, is_read])
+  @@index([user_id, created_at])
+  @@map("notifications")
+}
+
+// ────────────────────────────────────────────────────────────
+// SECURITY & OPS
+// ────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id            String   @id
+  request_id    String
+  user_id       String?
+  action        String               // e.g. "ORDER_CREATE"
+  resource_type String               // e.g. "order"
+  resource_id   String?
+  ip_address    String?
+  user_agent    String?
+  status_code   Int?
+  duration_ms   Int?
+  metadata      String   @default("{}") // JSON extras
+  created_at    DateTime @default(now())
+
+  @@index([user_id])
+  @@index([action])
+  @@index([created_at])
+  @@map("audit_logs")
+}

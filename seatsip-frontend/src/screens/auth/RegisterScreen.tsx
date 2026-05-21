@@ -1,134 +1,459 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, StyleSheet, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ScrollView, StatusBar, Alert, Image,
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
+  Alert,
+  ImageBackground,
+  Dimensions,
+  ActivityIndicator,
+  ToastAndroid,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { BlurView } from 'expo-blur';
+import { User, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { RootStackParamList } from '../../navigation/types';
-import { Colors, Typography, Spacing, Radius, Shadow } from '../../theme';
-import { Button } from '../../components/ui';
+import { useGoogleIdTokenAuth, isGoogleClientConfigured } from '../../services/auth/googleAuth';
 import { GoogleButton } from '../../components/ui/GoogleButton';
+import { formatAuthApiError } from '../../utils/authErrors';
+
+const { width, height } = Dimensions.get('window');
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
+const MIN_PASSWORD_LEN = 10;
+
 export default function RegisterScreen() {
   const navigation = useNavigation<Nav>();
-  const { register } = useAuth();
+  const insets = useSafeAreaInsets();
+  const { register, loginWithGoogleIdToken } = useAuth();
+  const { request, promptForIdToken } = useGoogleIdTokenAuth();
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPass, setShowPass] = useState(false);
+  const [nameFocused, setNameFocused] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
+  const [confirmPasswordFocused, setConfirmPasswordFocused] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const styleId = 'rnw-autofill-override';
+      let style = document.getElementById(styleId) as HTMLStyleElement;
+      if (!style) {
+        style = document.createElement('style');
+        style.id = styleId;
+        style.type = 'text/css';
+        document.head.appendChild(style);
+      }
+      style.innerHTML = `
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover, 
+        input:-webkit-autofill:focus, 
+        input:-webkit-autofill:active,
+        input[type="text"]:-webkit-autofill,
+        input[type="email"]:-webkit-autofill,
+        input[type="password"]:-webkit-autofill {
+          -webkit-box-shadow: 0 0 0 1000px #2a2a2a inset !important;
+          -webkit-text-fill-color: #ffffff !important;
+          transition: background-color 999999s ease-in-out 0s, color 999999s ease-in-out 0s;
+        }
+      `;
+    }
+  }, []);
 
   const handleRegister = async () => {
-    if (!name.trim() || !email.trim() || !password) {
-      Alert.alert('Missing fields', 'Name, email and password are required.');
+    console.log('[Register] Registration attempt started');
+    if (!name.trim() || !email.trim() || !password || !confirmPassword) {
+      console.log('[Register] Missing fields');
+      Alert.alert('Missing fields', 'All fields are required.');
       return;
     }
-    if (password.length < 6) {
-      Alert.alert('Weak password', 'Password must be at least 6 characters.');
+    if (password !== confirmPassword) {
+      console.log('[Register] Password mismatch');
+      Alert.alert('Password mismatch', 'Passwords do not match.');
+      return;
+    }
+    if (password.length < MIN_PASSWORD_LEN) {
+      console.log('[Register] Password too short');
+      Alert.alert(
+        'Weak password',
+        `Use at least ${MIN_PASSWORD_LEN} characters. Avoid common words (the server checks strength).`
+      );
+      return;
+    }
+    try {
+      console.log('[Register] Calling register service...', { name: name.trim(), email: email.trim().toLowerCase() });
+      setLoading(true);
+      await register(name.trim(), email.trim().toLowerCase(), password);
+      console.log('[Register] Registration successful! (App.tsx will now redirect)');
+      
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Welcome to SeatSip!', ToastAndroid.SHORT);
+      }
+    } catch (err: unknown) {
+      const errorMsg = formatAuthApiError(err);
+      console.error('[Register] Registration failed error:', err);
+      console.error('[Register] Formatted error:', errorMsg);
+      Alert.alert('Registration failed', errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    if (!isGoogleClientConfigured()) {
+      Alert.alert('Google Sign-In', 'Google client IDs are not configured in the app build.');
       return;
     }
     try {
       setLoading(true);
-      await register(name.trim(), email.trim().toLowerCase(), password, phone || undefined);
-      navigation.replace('MainTabs');
-    } catch (err: any) {
-      Alert.alert('Registration failed', err?.response?.data?.message || 'Please try again.');
+      const idToken = await promptForIdToken();
+      await loginWithGoogleIdToken(idToken);
+      console.log('[Login] Login successful! (App.tsx will now redirect)');
+    } catch (err: unknown) {
+      const msg = formatAuthApiError(err);
+      if (!/cancel/i.test(msg)) {
+        Alert.alert('Google Sign-In', msg);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <Image
-            source={require('../../../assets/images/raj.png')}
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
-        </View>
+    <View style={styles.root}>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      <ImageBackground
+        source={require('../../../assets/images/auth_bg.png')}
+        style={styles.bgImage}
+        resizeMode="cover"
+      >
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView
+            contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 40 }]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={{ height: height * 0.1 }} />
 
-        <View style={styles.card}>
-          <Text style={styles.title}>Create account</Text>
-          <Text style={styles.subtitle}>Join thousands of café lovers</Text>
+            {/* Signup Card */}
+            <View style={styles.cardWrapper}>
+              <BlurView intensity={Platform.OS === 'ios' ? 40 : 100} tint="dark" style={styles.card}>
+                <View style={styles.cardContent}>
+                  <Text style={styles.welcomeTitle}>Create account</Text>
+                  <Text style={styles.welcomeSub}>Sign up to get started</Text>
 
-          {[
-            { label: 'Full Name', value: name, setter: setName, placeholder: 'Arjun Sharma', type: 'default' },
-            { label: 'Email', value: email, setter: setEmail, placeholder: 'arjun@example.com', type: 'email-address' },
-            { label: 'Phone (optional)', value: phone, setter: setPhone, placeholder: '+91-9876543210', type: 'phone-pad' },
-            { label: 'Password', value: password, setter: setPassword, placeholder: '••••••••', type: 'default', secure: true },
-          ].map(f => (
-            <View key={f.label} style={styles.field}>
-              <Text style={styles.label}>{f.label}</Text>
-              <TextInput
-                style={styles.input}
-                value={f.value}
-                onChangeText={f.setter as any}
-                placeholder={f.placeholder}
-                placeholderTextColor={Colors.textMuted}
-                keyboardType={f.type as any}
-                autoCapitalize={f.type === 'default' && !f.secure ? 'words' : 'none'}
-                secureTextEntry={f.secure}
-              />
+                  {/* Name Field */}
+                  <View style={[styles.inputContainer, nameFocused && styles.inputContainerFocused]}>
+                    <View style={styles.iconBox}>
+                      <User size={18} color="#f0f0f0" />
+                    </View>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Full Name"
+                      placeholderTextColor="rgba(255,255,255,0.4)"
+                      value={name}
+                      onChangeText={setName}
+                      autoCapitalize="words"
+                      onFocus={() => setNameFocused(true)}
+                      onBlur={() => setNameFocused(false)}
+                    />
+                  </View>
+
+                  {/* Email Field */}
+                  <View style={[styles.inputContainer, emailFocused && styles.inputContainerFocused]}>
+                    <View style={styles.iconBox}>
+                      <Mail size={18} color="#f0f0f0" />
+                    </View>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Email"
+                      placeholderTextColor="rgba(255,255,255,0.4)"
+                      value={email}
+                      onChangeText={setEmail}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      onFocus={() => setEmailFocused(true)}
+                      onBlur={() => setEmailFocused(false)}
+                    />
+                  </View>
+
+                  {/* Password Field */}
+                  <View style={[styles.inputContainer, passwordFocused && styles.inputContainerFocused]}>
+                    <View style={styles.iconBox}>
+                      <Lock size={18} color="#f0f0f0" />
+                    </View>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Password"
+                      placeholderTextColor="rgba(255,255,255,0.4)"
+                      value={password}
+                      onChangeText={setPassword}
+                      secureTextEntry={!showPass}
+                      onFocus={() => setPasswordFocused(true)}
+                      onBlur={() => setPasswordFocused(false)}
+                    />
+                  </View>
+
+                  {/* Confirm Password Field */}
+                  <View style={[styles.inputContainer, confirmPasswordFocused && styles.inputContainerFocused]}>
+                    <View style={styles.iconBox}>
+                      <Lock size={18} color="#f0f0f0" />
+                    </View>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Confirm Password"
+                      placeholderTextColor="rgba(255,255,255,0.4)"
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      secureTextEntry={!showPass}
+                      onFocus={() => setConfirmPasswordFocused(true)}
+                      onBlur={() => setConfirmPasswordFocused(false)}
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowPass(!showPass)}
+                      style={styles.eyeToggle}
+                    >
+                      {showPass ? (
+                        <EyeOff size={18} color="#f0f0f0" />
+                      ) : (
+                        <Eye size={18} color="#f0f0f0" />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Primary Action */}
+                  <TouchableOpacity
+                    style={styles.signInBtn}
+                    onPress={handleRegister}
+                    disabled={loading}
+                    activeOpacity={0.8}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <>
+                        <Text style={styles.signInText}>Sign Up</Text>
+                        <ArrowRight size={20} color="#fff" />
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <Text style={styles.passwordHint}>
+                    Password: at least {MIN_PASSWORD_LEN} characters; not a common phrase (checked securely on the server).
+                  </Text>
+
+                  {/* Divider */}
+                  <View style={styles.dividerRow}>
+                    <View style={styles.dividerLine} />
+                    <Text style={styles.dividerText}>or</Text>
+                    <View style={styles.dividerLine} />
+                  </View>
+
+                  {!request && !loading ? (
+                    <Text style={styles.googlePrep}>Preparing Google Sign-In…</Text>
+                  ) : null}
+
+                  <GoogleButton
+                    onPress={handleGoogleSignIn}
+                    disabled={loading || !request}
+                    loading={loading}
+                    style={{ marginBottom: 32 }}
+                  />
+
+                  {/* Footer */}
+                  <View style={styles.footer}>
+                    <Text style={styles.footerText}>Already have an account? </Text>
+                    <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+                      <Text style={styles.footerLink}>Sign in</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </BlurView>
             </View>
-          ))}
-
-          <Button
-            title="Create Account"
-            onPress={handleRegister}
-            loading={loading}
-            fullWidth
-            size="lg"
-            style={{ marginTop: Spacing.md }}
-          />
-          
-          {/* Divider */}
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <GoogleButton onPress={() => {}} />
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Already have an account? </Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-            <Text style={styles.footerLink}>Sign in</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+            
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </ImageBackground>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
-  scroll: { flexGrow: 1, padding: Spacing.base },
-  header: { alignItems: 'center', paddingTop: 60, paddingBottom: 36 },
-  logo: { fontSize: Typography['2xl'], fontWeight: Typography.extrabold, color: Colors.primary },
-  logoImage: { width: 200, height: 70, marginBottom: 8 },
-  card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, padding: Spacing.xl, ...Shadow.md },
-  title: { fontSize: Typography.xl, fontWeight: Typography.bold, color: Colors.textPrimary },
-  subtitle: { fontSize: Typography.base, color: Colors.textSecondary, marginTop: 4, marginBottom: Spacing.lg },
-  field: { marginBottom: Spacing.md },
-  label: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textSecondary, marginBottom: 6 },
-  input: {
-    borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md, paddingVertical: 12,
-    fontSize: Typography.base, color: Colors.textPrimary, backgroundColor: Colors.background,
+  root: {
+    flex: 1,
+    backgroundColor: '#000',
   },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: Spacing.lg },
-  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.divider },
-  dividerText: { marginHorizontal: 12, fontSize: Typography.sm, color: Colors.textMuted },
-  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.xl },
-  footerText: { fontSize: Typography.base, color: Colors.textSecondary },
-  footerLink: { fontSize: Typography.base, color: Colors.accent, fontWeight: Typography.bold },
+  bgImage: {
+    width,
+    height,
+  },
+  container: {
+    flex: 1,
+  },
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+  },
+  branding: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  logoText: {
+    fontSize: 48,
+    fontWeight: '900',
+    color: '#fff',
+    letterSpacing: 8,
+    textAlign: 'center',
+  },
+  subtitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  subtitleLine: {
+    height: 1,
+    width: 20,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  subtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.6)',
+    letterSpacing: 4,
+    marginHorizontal: 10,
+  },
+  cardWrapper: {
+    borderRadius: 32,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  card: {
+    width: '100%',
+  },
+  cardContent: {
+    padding: 30,
+  },
+  welcomeTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  welcomeSub: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.5)',
+    marginBottom: 32,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2a2a2a',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#444444',
+    marginBottom: 16,
+    paddingHorizontal: 16,
+    height: 60,
+  },
+  inputContainerFocused: {
+    borderColor: '#8B9D5E',
+    backgroundColor: '#2a2a2a',
+  },
+  iconBox: {
+    marginRight: 12,
+  },
+  input: {
+    flex: 1,
+    color: '#f0f0f0',
+    fontSize: 16,
+    height: '100%',
+    backgroundColor: 'transparent',
+    ...Platform.select({
+      web: { outlineStyle: 'none' } as any,
+    }),
+  },
+  eyeToggle: {
+    padding: 4,
+  },
+  signInBtn: {
+    backgroundColor: '#8B9D5E',
+    height: 60,
+    borderRadius: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  signInText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  dividerText: {
+    color: 'rgba(255,255,255,0.3)',
+    marginHorizontal: 12,
+    fontSize: 14,
+  },
+  passwordHint: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.45)',
+    marginBottom: 16,
+    lineHeight: 17,
+  },
+  googlePrep: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.5)',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  footerText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 15,
+  },
+  footerLink: {
+    color: '#8B9D5E',
+    fontSize: 15,
+    fontWeight: '700',
+  },
 });

@@ -7,13 +7,13 @@ import {
   StyleSheet,
   SafeAreaView,
   StatusBar,
-  Alert,
-  Platform,
   Image,
+  ImageBackground
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../../context/AuthContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../../navigation/types';
 import AppIcon from '../../components/ui/AppIcon';
 
@@ -35,7 +35,8 @@ const PREFERENCE_ITEMS = [
 
 const SUPPORT_ITEMS = [
   { id: '1', icon: '❓', label: 'Help Center',        sub: 'Get help and support',  iconBg: '#EDE7F6', iconColor: '#4527A0', route: 'HelpCenter' },
-  { id: '2', icon: '📄', label: 'Terms & Conditions', sub: 'Read our policies',     iconBg: '#EDE7F6', iconColor: '#4527A0', route: 'Terms' },
+  { id: '2', icon: '📋', label: 'Terms & Conditions', sub: 'Read our policies',     iconBg: '#EDE7F6', iconColor: '#4527A0', route: 'Terms' },
+  { id: '3', icon: '📄', label: 'Privacy Policy',     sub: 'Read our privacy practices', iconBg: '#EDE7F6', iconColor: '#4527A0', route: 'PrivacyPolicy' },
 ];
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -58,181 +59,153 @@ const MenuRow = ({ item, isLast, iconBg, onPress }: { item: any, isLast: boolean
   </TouchableOpacity>
 );
 
+// ─── Divider ──────────────────────────────────────────────────────────────────
+const SectionDivider = () => (
+  <View style={styles.divider} />
+);
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const navigation = useNavigation<Nav>();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const avatarUri = user?.avatar;
   const avatarInitial = (user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase();
 
-  const handleLogout = () => {
-    const performLogout = async () => {
-      try {
-        await logout();
-      } catch (e) {
-        console.error('Logout error', e);
-      }
-    };
-
-    if (Platform.OS === 'web') {
-      performLogout();
-    } else {
-      Alert.alert('Logout', 'Are you sure you want to sign out?', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: performLogout },
-      ]);
-    }
+  const points = user?.loyalty_points ?? 0;
+  
+  const getTierInfo = () => {
+    if (points >= 4000) return { name: 'CREAM', color: '#3F1D0E' };
+    if (points >= 2000) return { name: 'CARAMEL', color: '#B8860B' };
+    return { name: 'COFFEE', color: '#6D3914' };
   };
 
+  const tier = getTierInfo();
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={BG} />
+    <ImageBackground 
+      source={require('../../assets/images/app_bg.png')} 
+      style={styles.container}
+      resizeMode="cover"
+    >
+      <View style={{ flex: 1, paddingTop: insets.top }}>
+        <StatusBar barStyle="dark-content" />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Profile</Text>
-          <Text style={styles.headerSub}>Manage your account and preferences</Text>
-        </View>
-        <TouchableOpacity 
-          style={styles.settingsBtn} 
-          activeOpacity={0.75}
-          onPress={() => navigation.navigate('Settings')}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
         >
-          <AppIcon name="settings" size={20} color="#1A1A1A" />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── User Card ── */}
-        <View style={styles.userCard}>
-          {/* Avatar */}
-          <View style={styles.avatar}>
-            {avatarUri ? (
-              <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
-            ) : (
-              <Text style={styles.avatarLetter}>{avatarInitial}</Text>
-            )}
-          </View>
-
-          <View style={styles.userInfo}>
-            <View style={styles.userNameRow}>
-              <Text style={styles.userName}>{user?.name}</Text>
-              <View style={styles.goldBadge}>
-                <AppIcon name="points" size={11} color="#B8860B" fill="#B8860B" />
-                <Text style={styles.goldText}>Gold Member</Text>
-              </View>
-            </View>
-            <Text style={styles.userEmail}>{user?.email}</Text>
-            <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('EditProfile')} style={styles.editProfileRow}>
-              <Text style={styles.editProfile}>Edit Profile</Text>
-              <AppIcon name="arrow" size={14} color={ACCENT} />
+          {/* ── User Card ── */}
+          <View style={styles.userCard}>
+            {/* Avatar */}
+            <TouchableOpacity 
+              style={styles.avatar}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('EditProfile')}
+            >
+              {avatarUri ? (
+                <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.avatarLetter}>{avatarInitial}</Text>
+              )}
             </TouchableOpacity>
-          </View>
 
-          <AppIcon name="›" size={22} color="#CCCCCC" />
-        </View>
-
-        {/* ── Wallet / Points Banner ── */}
-        <TouchableOpacity 
-          style={styles.walletBanner} 
-          activeOpacity={0.85}
-          onPress={() => navigation.navigate('WalletScreen')}
-        >
-          {/* Wallet side */}
-          <View style={styles.walletSide}>
-            <View style={styles.walletIconBox}>
-              <AppIcon name="wallet" size={22} color="#fff" />
+            <View style={styles.userInfo}>
+              <View style={styles.userNameRow}>
+                <Text style={styles.userName}>{user?.name}</Text>
+                <View style={styles.goldBadge}>
+                  <AppIcon name="points" size={11} color={tier.color} fill={tier.color} />
+                  <Text style={[styles.goldText, { color: tier.color }]}>{tier.name} Member</Text>
+                </View>
+              </View>
+              <Text style={styles.userEmail}>{user?.email}</Text>
+              <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('EditProfile')} style={styles.editProfileRow}>
+                <Text style={styles.editProfile}>Edit Profile</Text>
+                <AppIcon name="arrow" size={14} color={ACCENT} />
+              </TouchableOpacity>
             </View>
-            <View>
-              <Text style={styles.walletAmount}>₹{user?.wallet_balance?.toFixed(0) || '0'}</Text>
-              <Text style={styles.walletLabel}>Wallet Balance</Text>
+
+            <AppIcon name="›" size={22} color="#CCCCCC" />
+          </View>
+
+
+
+          {/* ── My Activity ── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>MY ACTIVITY</Text>
+            <View style={styles.menuCard}>
+              {ACTIVITY_ITEMS.map((item, index) => (
+                <MenuRow
+                  key={item.id}
+                  item={item}
+                  isLast={index === ACTIVITY_ITEMS.length - 1}
+                  iconBg="#F5EDE6"
+                  onPress={() => navigation.navigate(item.route as any)}
+                />
+              ))}
             </View>
           </View>
 
-          {/* Divider */}
-          <View style={styles.bannerDivider} />
+          <SectionDivider />
 
-          {/* Points side */}
-          <View style={styles.walletSide}>
-            <View style={styles.pointsIconBox}>
-              <AppIcon name="points" size={20} color="#C9A84C" fill="#C9A84C" />
+          {/* ── Preferences ── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>PREFERENCES</Text>
+            <View style={styles.menuCard}>
+              {PREFERENCE_ITEMS.map((item, index) => (
+                <MenuRow
+                  key={item.id}
+                  item={item}
+                  isLast={index === PREFERENCE_ITEMS.length - 1}
+                  iconBg="#E8F5E9"
+                  onPress={() => navigation.navigate(item.route as any)}
+                />
+              ))}
             </View>
-            <View>
-              <Text style={styles.walletAmount}>{user?.loyalty_points || '0'}</Text>
-              <Text style={styles.walletLabel}>Reward Points</Text>
+          </View>
+
+          <SectionDivider />
+
+          {/* ── Support ── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>SUPPORT</Text>
+            <View style={styles.menuCard}>
+              {SUPPORT_ITEMS.map((item, index) => (
+                <MenuRow
+                  key={item.id}
+                  item={item}
+                  isLast={index === SUPPORT_ITEMS.length - 1}
+                  iconBg="#EDE7F6"
+                  onPress={() => navigation.navigate(item.route as any)}
+                />
+              ))}
             </View>
           </View>
 
-          <AppIcon name="›" size={22} color="rgba(255,255,255,0.5)" />
-        </TouchableOpacity>
-
-        {/* ── My Activity ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>MY ACTIVITY</Text>
-          <View style={styles.menuCard}>
-            {ACTIVITY_ITEMS.map((item, index) => (
-              <MenuRow
-                key={item.id}
-                item={item}
-                isLast={index === ACTIVITY_ITEMS.length - 1}
-                iconBg="#F5EDE6"
-                onPress={() => navigation.navigate(item.route as any)}
-              />
-            ))}
+          {/* ── Footer ── */}
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              Need help? Visit our{' '}
+              <Text
+                style={styles.footerLink}
+                onPress={() => navigation.navigate('HelpCenter' as any)}
+              >
+                Help Center
+              </Text>
+            </Text>
           </View>
-        </View>
 
-        {/* ── Preferences ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>PREFERENCES</Text>
-          <View style={styles.menuCard}>
-            {PREFERENCE_ITEMS.map((item, index) => (
-              <MenuRow
-                key={item.id}
-                item={item}
-                isLast={index === PREFERENCE_ITEMS.length - 1}
-                iconBg="#E8F5E9"
-                onPress={() => navigation.navigate(item.route as any)}
-              />
-            ))}
-          </View>
-        </View>
 
-        {/* ── Support ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>SUPPORT</Text>
-          <View style={styles.menuCard}>
-            {SUPPORT_ITEMS.map((item, index) => (
-              <MenuRow
-                key={item.id}
-                item={item}
-                isLast={index === SUPPORT_ITEMS.length - 1}
-                iconBg="#EDE7F6"
-                onPress={() => navigation.navigate(item.route as any)}
-              />
-            ))}
-          </View>
-        </View>
-
-        {/* ── Sign Out ── */}
-        <TouchableOpacity style={styles.signOutRow} activeOpacity={0.7} onPress={handleLogout}>
-          <AppIcon name="logout" size={20} color="#C62828" />
-          <Text style={styles.signOutText}>Sign Out</Text>
-        </TouchableOpacity>
-
-        <View style={{ height: 100 }} />
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </View>
+    </ImageBackground>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: BG },
+  container: { flex: 1, width: '100%' },
+  safeArea: { flex: 1, width: '100%' },
 
   // Header
   header: {
@@ -265,11 +238,11 @@ const styles = StyleSheet.create({
   },
   settingsIcon: { fontSize: 20 },
 
-  scrollContent: { paddingHorizontal: 20, paddingTop: 4 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 20, width: '100%' },
 
   // User Card
   userCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FAF3E8',
     borderRadius: 20,
     padding: 18,
     flexDirection: 'row',
@@ -329,76 +302,18 @@ const styles = StyleSheet.create({
   editProfileRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   editProfile: { fontSize: 14, fontWeight: '700', color: ACCENT },
 
-  // Wallet Banner
-  walletBanner: {
-    backgroundColor: BROWN,
-    borderRadius: 20,
-    paddingVertical: 20,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-    shadowColor: BROWN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  walletSide: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  walletIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  walletIconEmoji: { fontSize: 22 },
-  pointsIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 2,
-    borderColor: '#C9A84C',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  pointsIconEmoji: { fontSize: 20 },
-  walletAmount: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: -0.5,
-  },
-  walletLabel: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
-    marginTop: 1,
-  },
-  bannerDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    marginHorizontal: 16,
-  },
-
   // Sections
   section: { marginBottom: 16 },
   sectionLabel: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700',
-    color: '#999',
+    color: '#5D4037',
     letterSpacing: 1.2,
     marginBottom: 10,
     marginLeft: 2,
   },
   menuCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FAF3E8',
     borderRadius: 20,
     overflow: 'hidden',
     shadowColor: '#000',
@@ -436,18 +351,22 @@ const styles = StyleSheet.create({
   menuSub: { fontSize: 13, color: '#999' },
   chevron: { fontSize: 22, color: '#CCCCCC' },
 
-  // Sign out
-  signOutRow: {
-    flexDirection: 'row',
+  footer: {
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 4,
+    paddingVertical: 20,
   },
-  signOutIcon: { fontSize: 20 },
-  signOutText: {
-    fontSize: 16,
+  footerText: {
+    fontSize: 12,
+    color: '#AAAAAA',
+  },
+  footerLink: {
     fontWeight: '700',
-    color: '#C62828',
+    color: '#1A1A1A',
+  },
+  divider: {
+    height: 0.5,
+    backgroundColor: 'rgba(0,0,0,0.06)',
+    marginVertical: 10,
+    marginHorizontal: 12,
   },
 });

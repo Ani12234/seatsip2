@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,16 @@ import {
   StatusBar,
   Dimensions,
   Alert,
+  ActivityIndicator,
+  RefreshControl,
+  ImageBackground,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/types';
 import AppIcon from '../../components/ui/AppIcon';
+import { reservationsApi } from '../../services/api';
+import { Reservation } from '../../types';
 
 const { width } = Dimensions.get('window');
 
@@ -26,44 +31,40 @@ const FILTERS = [
   { id: 'completed', label: 'Completed', icon: '✅' },
 ];
 
-const RESERVATIONS = [
-  {
-    id: '1',
-    name: 'The Leela Palace',
+function formatReservationDate(dateStr: string) {
+  const d = new Date(`${dateStr}T12:00:00`);
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function reservationFilterCategory(r: Reservation): 'upcoming' | 'pending' | 'completed' {
+  if (['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(r.status)) return 'completed';
+  if (r.status === 'PENDING') return 'pending';
+  return 'upcoming';
+}
+
+function badgeKey(status: string): string {
+  if (status === 'CONFIRMED' || status === 'SEATED') return 'confirmed';
+  if (status === 'PENDING') return 'pending';
+  if (status === 'COMPLETED') return 'completed';
+  if (status === 'CANCELLED' || status === 'NO_SHOW') return 'cancelled';
+  return 'pending';
+}
+
+function mapReservation(r: Reservation) {
+  return {
+    raw: r,
+    id: r.id,
+    name: r.cafe_name,
     type: 'Dining',
-    guests: 4,
-    date: '28 Apr 2026',
-    time: '7:30 PM',
-    status: 'confirmed',
-    category: 'upcoming',
+    guests: r.party_size,
+    date: formatReservationDate(r.date),
+    time: r.time,
+    status: badgeKey(r.status),
+    category: reservationFilterCategory(r),
     typeIcon: '🍴',
-    image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=300&q=80',
-  },
-  {
-    id: '2',
-    name: 'Taj Lands End',
-    type: 'Dining',
-    guests: 2,
-    date: '02 May 2026',
-    time: '8:00 PM',
-    status: 'pending',
-    category: 'pending',
-    typeIcon: '🍴',
-    image: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=300&q=80',
-  },
-  {
-    id: '3',
-    name: 'Blue Frog',
-    type: 'Event',
-    guests: 6,
-    date: '15 Apr 2026',
-    time: '9:00 PM',
-    status: 'completed',
-    category: 'completed',
-    typeIcon: '🎵',
-    image: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=300&q=80',
-  },
-];
+    image: r.cafe_image || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=300&q=80',
+  };
+}
 
 // ─── Status badge config ──────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, any> = {
@@ -88,6 +89,13 @@ const STATUS_CONFIG: Record<string, any> = {
     text: '#1565C0',
     border: '#BBDEFB',
   },
+  cancelled: {
+    label: 'Cancelled',
+    icon: '✕',
+    bg: '#FFEBEE',
+    text: '#C62828',
+    border: '#FFCDD2',
+  },
 };
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
@@ -103,7 +111,7 @@ const StatusBadge = ({ status }: { status: string }) => {
 
 // ─── Reservation Card ─────────────────────────────────────────────────────────
 const ReservationCard = ({ item, onModify, onCancel }: { item: any; onModify: (item: any) => void; onCancel: (item: any) => void }) => {
-  const isCompleted = item.status === 'completed';
+  const isTerminal = ['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(item.raw?.status);
 
   return (
     <View style={styles.card}>
@@ -158,7 +166,7 @@ const ReservationCard = ({ item, onModify, onCancel }: { item: any; onModify: (i
       </View>
 
       {/* Action buttons — only for non-completed */}
-      {!isCompleted && (
+      {!isTerminal && (
         <View style={styles.actionRow}>
           <TouchableOpacity
             style={styles.modifyBtn}
@@ -199,14 +207,37 @@ const FilterChip = ({ item, active, onPress }: { item: any; active: boolean; onP
 export default function ReservationHistoryScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [activeFilter, setActiveFilter] = useState('all');
+  const [reservations, setReservations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadReservations = useCallback(async () => {
+    try {
+      const { data } = await reservationsApi.list();
+      setReservations((data.data || []).map((r: Reservation) => mapReservation(r)));
+    } catch {
+      setReservations([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadReservations();
+  }, [loadReservations]);
 
   const filtered =
     activeFilter === 'all'
-      ? RESERVATIONS
-      : RESERVATIONS.filter((r) => r.category === activeFilter);
+      ? reservations
+      : reservations.filter((r) => r.category === activeFilter);
 
   const handleModify = (item: any) => {
-    Alert.alert('Modify', `Modifying reservation for ${item.name}`);
+    if (item.raw?.cafe_id) {
+      navigation.navigate('TableSelect', { cafeId: item.raw.cafe_id, cafeName: item.name });
+    } else {
+      Alert.alert('Modify', `Modifying reservation for ${item.name}`);
+    }
   };
 
   const handleCancel = (item: any) => {
@@ -215,14 +246,30 @@ export default function ReservationHistoryScreen() {
       `Are you sure you want to cancel your booking at ${item.name}?`,
       [
         { text: 'No', style: 'cancel' },
-        { text: 'Yes, Cancel', style: 'destructive', onPress: () => {} },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await reservationsApi.cancel(item.id);
+              await loadReservations();
+            } catch (e: any) {
+              Alert.alert('Could not cancel', e?.response?.data?.message || 'Try again.');
+            }
+          },
+        },
       ]
     );
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F5EEE8" />
+    <ImageBackground 
+      source={require('../../assets/images/app_bg.png')} 
+      style={styles.safe}
+      resizeMode="cover"
+    >
+      <SafeAreaView style={{ flex: 1, width: '100%' }}>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
       {/* ── Header ── */}
       <View style={styles.header}>
@@ -256,36 +303,54 @@ export default function ReservationHistoryScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
-      >
-        {filtered.map((item) => (
-          <ReservationCard
-            key={item.id}
-            item={item}
-            onModify={handleModify}
-            onCancel={handleCancel}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadReservations();
+            }}
+            tintColor="#8B5E3C"
           />
-        ))}
+        }
+      >
+        {loading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color="#8B5E3C" />
+          </View>
+        ) : (
+          filtered.map((item) => (
+            <ReservationCard
+              key={item.id}
+              item={item}
+              onModify={handleModify}
+              onCancel={handleCancel}
+            />
+          ))
+        )}
 
-        {filtered.length === 0 && (
+        {!loading && filtered.length === 0 && (
           <View style={styles.empty}>
             <AppIcon name="📭" size={36} color="#8C7060" />
             <Text style={styles.emptyText}>No reservations found</Text>
           </View>
         )}
 
-        {/* ── Help banner ── */}
-        <TouchableOpacity style={styles.helpBanner} activeOpacity={0.85}>
-          <View style={styles.helpIconBox}>
-            <AppIcon name="notification" size={20} color="#fff" />
-          </View>
-          <View style={styles.helpText}>
-            <Text style={styles.helpTitle}>Need help with your booking?</Text>
-            <Text style={styles.helpSub}>Contact restaurant directly for assistance.</Text>
-          </View>
-          <AppIcon name="›" size={20} color="#8B5E3C" />
-        </TouchableOpacity>
+        {!loading && (
+          <TouchableOpacity style={styles.helpBanner} activeOpacity={0.85}>
+            <View style={styles.helpIconBox}>
+              <AppIcon name="notification" size={20} color="#fff" />
+            </View>
+            <View style={styles.helpText}>
+              <Text style={styles.helpTitle}>Need help with your booking?</Text>
+              <Text style={styles.helpSub}>Contact restaurant directly for assistance.</Text>
+            </View>
+            <AppIcon name="›" size={20} color="#8B5E3C" />
+          </TouchableOpacity>
+        )}
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
@@ -293,7 +358,6 @@ export default function ReservationHistoryScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#F5EEE8',
   },
 
   // Header
@@ -373,6 +437,11 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 32,
     gap: 14,
+  },
+
+  loadingBox: {
+    paddingVertical: 48,
+    alignItems: 'center',
   },
 
   // Card

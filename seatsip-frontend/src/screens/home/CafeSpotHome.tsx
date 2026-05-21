@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, StatusBar, Dimensions, SafeAreaView, Platform, RefreshControl, Modal, TextInput, KeyboardAvoidingView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, FlatList, TouchableOpacity, StyleSheet, Image, StatusBar, Dimensions, SafeAreaView, Platform, RefreshControl, Modal, TextInput, KeyboardAvoidingView, ActivityIndicator, Alert, ImageBackground, Animated, Easing } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { Svg, Rect, Path, Circle, Line, Polyline } from 'react-native-svg';
@@ -8,11 +8,17 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../../navigation/types';
 import { cafesApi } from '../../services/api';
+import { BRAND } from '../../constants/brand';
+import { ADDRESS_STORAGE_KEY } from '../../constants/storageKeys';
 import AppIcon from '../../components/ui/AppIcon';
 import ProductDetailSheet from '../../components/ui/ProductDetailSheet';
 import { useCart } from '../../context/CartContext';
+import LoadingScreen from '../auth/LoadingScreen';
+import TermsConsentSheet from '../../components/ui/TermsConsentSheet';
+import PromoBannerSlider from '../../components/ui/PromoBannerSlider';
+import FoodPromoBannerSlider from '../../components/ui/FoodPromoBannerSlider';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 const BellIcon = () => (
@@ -38,9 +44,74 @@ const HeartIcon = ({ filled = false }: { filled?: boolean }) => (
   </Svg>
 );
 
+const CategoryIcon = ({ label, isActive }: { label: string; isActive: boolean }) => {
+  const color = isActive ? '#fff' : '#6B3F1A';
+  const size = 26;
+
+  switch (label) {
+    case 'Beverages':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <Path d="M10 2v2M14 2v2M6 2v2"></Path>
+          <Path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1"></Path>
+        </Svg>
+      );
+    case 'Food':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <Path d="M6 8l1.75 12.28a2 2 0 0 0 2 1.72h4.54a2 2 0 0 0 2-1.72L18 8M5 8h14M7 15a6.47 6.47 0 0 1 5 0 6.47 6.47 0 0 0 5 0M12 8l1-6h2"></Path>
+        </Svg>
+      );
+    case 'Dietary':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <Path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z" />
+          <Path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12" />
+        </Svg>
+      );
+    case 'Work':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <Path d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z" />
+          <Path d="M20.054 15.987H3.946" />
+        </Svg>
+      );
+    case 'Social':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <Path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5" />
+        </Svg>
+      );
+    case 'Outdoor':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <Path d="M18 10.2V4.774a1.5 1.5 0 0 0-.97-1.352 11 11 0 0 0-6.486.132M10.2 18H4.774a1.5 1.5 0 0 1-1.352-.97 11 11 0 0 1 .132-6.487" />
+          <Path d="M18 5a4 3 0 0 1 4 3 2 2 0 0 1-2 2 10 10 0 0 0-5.139 1.42M5 18a3 4 0 0 0 3 4 2 2 0 0 0 2-2 10 10 0 0 1 1.42-5.14" />
+          <Path d="M8.709 2.554a10 10 0 0 0-6.155 6.155 1.5 1.5 0 0 0 .676 1.626l9.807 5.42a2 2 0 0 0 2.718-2.718l-5.42-9.807a1.5 1.5 0 0 0-1.626-.676" />
+        </Svg>
+      );
+    case 'All':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <Rect x="3" y="3" width="7" height="7" rx="1"></Rect>
+          <Rect x="14" y="3" width="7" height="7" rx="1"></Rect>
+          <Rect x="3" y="14" width="7" height="7" rx="1"></Rect>
+          <Rect x="14" y="14" width="7" height="7" rx="1"></Rect>
+        </Svg>
+      );
+    default:
+      return null;
+  }
+};
+
 const CATEGORIES = [
-  { emoji: '☕', label: 'All' },{ emoji: '🧋', label: 'Bubble Tea' },{ emoji: '🥐', label: 'Bakery' },
-  { emoji: '🍰', label: 'Desserts' },{ emoji: '🫖', label: 'Tea' },{ emoji: '💻', label: 'Work & Study' },{ emoji: '💕', label: 'Date' },
+  { label: 'All' },
+  { label: 'Beverages' },
+  { label: 'Food' },
+  { label: 'Dietary' },
+  { label: 'Work' },
+  { label: 'Social' },
+  { label: 'Outdoor' },
 ];
 
 const QUICK_FILTERS = [
@@ -69,6 +140,8 @@ const POPULAR_ITEMS = [
   { id: 'aff18833-3c54-4aff-82a8-dc68593c876e', name: 'Espresso', desc: 'Strong, bold and pure espresso shot for true coffee lovers.', tags: ['Strong', 'Hot', 'Classic'], cal: '60 cal', price: '₹120', image: 'https://images.unsplash.com/photo-1510707577719-ae7c14805e3a?w=300' },
 ];
 
+// Slides moved to PromoBannerSlider component
+
 type SavedAddress = {
   id: string;
   label: string;
@@ -83,7 +156,6 @@ type SavedAddress = {
 
 type AddressForm = Omit<SavedAddress, 'id'>;
 
-const ADDRESS_STORAGE_KEY = 'seatsip.addressBook';
 const DEFAULT_ADDRESS: SavedAddress = {
   id: 'default-home',
   label: 'Home',
@@ -157,17 +229,11 @@ const CafeCard = ({ cafe, onPress }: { cafe: CafeCardData; onPress: () => void }
       <View style={styles.cafeImgWrap}>
         <Image source={{ uri: cafe.image }} style={styles.cafeImg} />
         <TouchableOpacity style={styles.heartBtn} onPress={() => setLiked(!liked)}><HeartIcon filled={liked} /></TouchableOpacity>
-        <View style={styles.distBadge}><Text style={styles.distText}>{cafe.distance}</Text></View>
         <View style={styles.tagBadge}><Text style={styles.tagText}>{cafe.tag}</Text></View>
       </View>
       <View style={styles.cafeBody}>
         <View style={styles.cafeNameRow}><Text style={styles.cafeName}>{cafe.name}</Text><View style={styles.openBadge}><Text style={styles.openText}>Open</Text></View></View>
         <View style={styles.ratingRow}><AppIcon name="popular" size={13} color="#F4A300" fill="#F4A300" /><Text style={styles.ratingVal}>{cafe.rating}</Text><Text style={styles.ratingCnt}>({cafe.reviews} reviews)</Text></View>
-        <View style={styles.statsRow}>
-          {[{ val: cafe.eta, lbl: 'Delivery' },{ val: cafe.distance, lbl: 'Distance' },{ val: String(cafe.reviews), lbl: 'Reviews' }].map((s, i) => (
-            <View key={i} style={styles.statItem}><Text style={styles.statVal}>{s.val}</Text><Text style={styles.statLbl}>{s.lbl}</Text></View>
-          ))}
-        </View>
         <View style={styles.divider} />
         <View style={styles.cafeBottom}><View style={styles.ctPill}><Text style={styles.ctPillTxt}>{cafe.tag}</Text></View><View style={styles.etaRow}><AppIcon name="time" size={10} color={TEXT_LIGHT} /><Text style={styles.etaTxt}>{cafe.eta} away</Text></View></View>
       </View>
@@ -206,16 +272,49 @@ const PopularItem = ({ item, onPress }: { item: typeof POPULAR_ITEMS[0]; onPress
   );
 };
 
+/*
+const MarqueeBanner = () => {
+  const scrollX = React.useRef(new Animated.Value(0)).current;
+  const contentWidth = SCREEN_WIDTH * 2;
+
+  useEffect(() => {
+    const startAnimation = () => {
+      scrollX.setValue(0);
+      Animated.timing(scrollX, {
+        toValue: -SCREEN_WIDTH,
+        duration: 15000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }).start(() => startAnimation());
+    };
+    startAnimation();
+  }, []);
+
+  return (
+    <View style={styles.marqueeContainer}>
+      <Animated.View style={[styles.marqueeContent, { transform: [{ translateX: scrollX }] }]}>
+        <Text style={styles.marqueeText}>
+          ☕️ GET 20% OFF ON ALL SPECIALTY BREWS THIS WEEKEND! USE CODE: BREW20 • 🛵 FREE DELIVERY ON ORDERS ABOVE ₹499 • 🌟 JOIN THE SEATSIP CLUB FOR EXCLUSIVE REWARDS • ☕️ GET 20% OFF ON ALL SPECIALTY BREWS...
+        </Text>
+      </Animated.View>
+    </View>
+  );
+};
+*/
+
 export default function CafeSpotHome() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const { cart } = useCart();
+  const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(true);
   const [activeFilter, setActiveFilter] = useState(QUICK_FILTERS[0].id);
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
-  const [promoIndex] = useState(0);
+  const promoRef = React.useRef<FlatList>(null);
+  const infoRef = React.useRef<FlatList>(null);
+  const sheetScrollRef = React.useRef<ScrollView>(null);
   const [cafes, setCafes] = useState<CafeCardData[]>(FALLBACK_CAFES);
   const [trending, setTrending] = useState<CafeCardData[]>(FALLBACK_CAFES);
   const [refreshing, setRefreshing] = useState(false);
@@ -241,8 +340,9 @@ export default function CafeSpotHome() {
     }
   }, []);
 
-  const loadCafes = useCallback(async () => {
+  const loadCafes = useCallback(async (isRefresh = false) => {
     try {
+      if (!isRefresh) setLoading(true);
       const [nearRes, trendRes] = await Promise.all([
         cafesApi.list({ limit: 6 }),
         cafesApi.list({ sort: 'trending', limit: 6 }),
@@ -251,14 +351,43 @@ export default function CafeSpotHome() {
       const trendCafes = (trendRes.data.data || []).map(mapCafeToCard);
       if (nearCafes.length > 0) setCafes(nearCafes);
       if (trendCafes.length > 0) setTrending(trendCafes);
-    } catch (e) {
-      console.log('API unavailable, using fallback data');
+    } catch (err) {
+      console.log('Error loading cafes', err);
     } finally {
+      setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => { loadCafes(); }, [loadCafes]);
+  useEffect(() => {
+    loadCafes();
+  }, [loadCafes]);
+
+  /*
+  // Auto-slide for Promo Carousel
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const nextIndex = (promoIndex + 1) % PROMO_SLIDES.length;
+      setPromoIndex(nextIndex);
+      promoRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [promoIndex]);
+  */
+
+  /*
+  // Auto-slide for Info Carousel
+  useEffect(() => {
+    const INFO_COUNT = 3;
+    const timer = setInterval(() => {
+      const nextIndex = (infoIndex + 1) % INFO_COUNT;
+      setInfoIndex(nextIndex);
+      infoRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [infoIndex]);
+  */
+
   useEffect(() => {
     const loadSavedAddresses = async () => {
       try {
@@ -332,6 +461,10 @@ export default function CafeSpotHome() {
     });
     setAddressError('');
     setLocationStatus('');
+    // Scroll to the form
+    setTimeout(() => {
+      sheetScrollRef.current?.scrollToEnd({ animated: true });
+    }, 100);
   };
 
   const selectAddress = (address: SavedAddress) => {
@@ -383,6 +516,12 @@ export default function CafeSpotHome() {
   };
 
   const confirmDeleteAddress = (address: SavedAddress) => {
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(`Remove ${address.label} from your saved addresses?`);
+      if (confirmed) deleteAddress(address.id);
+      return;
+    }
+
     Alert.alert(
       'Delete address?',
       `Remove ${address.label} from your saved addresses?`,
@@ -437,12 +576,21 @@ export default function CafeSpotHome() {
     }
   };
 
+  // if (loading) return <LoadingScreen />;
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FAF6F1" />
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6B3F1A" />}
-      >
+    <ImageBackground 
+      source={require('../../assets/images/app_bg.png')} 
+      style={styles.container}
+      resizeMode="cover"
+    >
+      <View style={[styles.safe, { paddingTop: insets.top }]}>
+        <StatusBar barStyle="dark-content" />
+        <ScrollView 
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BROWN} />}
+        >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
@@ -451,8 +599,17 @@ export default function CafeSpotHome() {
             style={styles.locationButton}
           >
             <View style={styles.locRow}><View style={styles.locDot} /><Text style={styles.locLabel}>{selectedAddress.label}</Text><AppIcon name="▾" size={14} color={TEXT_DARK} /></View>
-            <Text style={styles.locSub}>{formatAddressSummary(selectedAddress)}</Text>
+            <Text style={styles.locSub} numberOfLines={1}>{formatAddressSummary(selectedAddress)}</Text>
           </TouchableOpacity>
+
+          <View style={styles.logoContainer}>
+            <Image 
+              source={require('../../assets/images/logo.png')} 
+              style={styles.logoImage} 
+              resizeMode="contain"
+            />
+          </View>
+
           <TouchableOpacity style={styles.bellBtn} onPress={() => navigation.navigate('NotificationsScreen')}><BellIcon /></TouchableOpacity>
         </View>
 
@@ -484,16 +641,6 @@ export default function CafeSpotHome() {
           )}
         </View>
 
-        {/* Categories */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catsScroll} contentContainerStyle={styles.catsContent}>
-          {CATEGORIES.map((cat, i) => (
-            <TouchableOpacity key={i} style={styles.catItem} onPress={() => setActiveCategory(i)}>
-              <View style={[styles.catCircle, activeCategory === i && styles.catCircleActive]}><AppIcon name={cat.emoji} size={22} color={activeCategory === i ? '#fff' : BROWN} /></View>
-              <Text style={[styles.catLabel, activeCategory === i && styles.catLabelActive]}>{cat.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
         {/* Filters */}
         {showFilters && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll} contentContainerStyle={styles.filtersContent}>
@@ -517,22 +664,42 @@ export default function CafeSpotHome() {
           </ScrollView>
         )}
 
-        {/* Promo Banner */}
-        <View style={styles.promoBanner}>
-          <Image source={{ uri: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=800' }} style={styles.promoBg} blurRadius={1} />
-          <View style={styles.promoOverlay} />
-          <View style={styles.promoLeft}>
-            <View style={styles.promoTagRow}><AppIcon name="coffee" size={11} color="#C4A882" /><Text style={styles.promoTagTxt}>MANUAL BREWING</Text></View>
-            <Text style={styles.promoH}>SPECIAL</Text><Text style={styles.promoMenu}>Menu</Text>
-            <Text style={styles.promoSub}>{'Handpicked offers\njust for you!'}</Text>
-            <TouchableOpacity style={styles.promoBtn}><Text style={styles.promoBtnTxt}>Explore Now</Text></TouchableOpacity>
-          </View>
-          <View style={styles.promoRight}><Text style={styles.promoBig}>30%</Text><Text style={styles.promoOff}>{'OFF\nALL ITEMS'}</Text></View>
-          <View style={styles.promoDots}>{[0,1,2].map(i => (<View key={i} style={[styles.dot, promoIndex === i && styles.dotActive]} />))}</View>
-        </View>
+        {/* Categories */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catsScroll} contentContainerStyle={styles.catsContent}>
+          {CATEGORIES.map((cat, i) => {
+            const isActive = activeCategory === i;
+            return (
+              <TouchableOpacity 
+                key={i} 
+                style={styles.catItem} 
+                onPress={() => setActiveCategory(i)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.catCircle, isActive && styles.catCircleActive]}>
+                  <CategoryIcon label={cat.label} isActive={isActive} />
+                </View>
+                <Text style={[styles.catLabel, isActive && styles.catLabelActive]}>{cat.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* <MarqueeBanner /> */}
+
+        {/* New Promo Banner Slider */}
+        <PromoBannerSlider />
 
         {/* Cafes Near You */}
-        <View style={styles.secHeader}><View style={styles.secTitle}><View style={styles.secBar} /><Text style={styles.secTitleTxt}>Cafes Near You</Text></View><TouchableOpacity style={styles.seeAllRow}><Text style={styles.seeAll}>See all</Text><AppIcon name="→" size={12} color={BROWN} /></TouchableOpacity></View>
+        <View style={styles.secHeader}>
+          <View style={styles.secTitle}><View style={styles.secBar} /><Text style={styles.secTitleTxt}>Cafes Near You</Text></View>
+          <TouchableOpacity 
+            style={styles.seeAllRow} 
+            onPress={() => navigation.navigate('CafeList', { title: 'Cafes Near You' })}
+          >
+            <Text style={styles.seeAll}>See all</Text>
+            <AppIcon name="→" size={12} color={BROWN} />
+          </TouchableOpacity>
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cafeRow}>
           {visibleCafes.map(cafe => <CafeCard key={cafe.id} cafe={cafe} onPress={() => navigation.navigate('CafeDetail', { cafeId: cafe.id })} />)}
         </ScrollView>
@@ -541,7 +708,16 @@ export default function CafeSpotHome() {
         )}
 
         {/* Popular Items */}
-        <View style={styles.secHeader}><View style={styles.secTitle}><View style={styles.secBar} /><Text style={styles.secTitleTxt}>Popular Items</Text></View><TouchableOpacity style={styles.seeAllRow}><Text style={styles.seeAll}>See all</Text><AppIcon name="→" size={12} color={BROWN} /></TouchableOpacity></View>
+        <View style={styles.secHeader}>
+          <View style={styles.secTitle}><View style={styles.secBar} /><Text style={styles.secTitleTxt}>Popular Items</Text></View>
+          <TouchableOpacity 
+            style={styles.seeAllRow}
+            onPress={() => navigation.navigate('PopularItems')}
+          >
+            <Text style={styles.seeAll}>See all</Text>
+            <AppIcon name="→" size={12} color={BROWN} />
+          </TouchableOpacity>
+        </View>
         {POPULAR_ITEMS.map(item => (
           <PopularItem
             key={item.id}
@@ -558,20 +734,20 @@ export default function CafeSpotHome() {
           />
         ))}
 
-        {/* Open Today */}
-        <View style={[styles.promoBanner, { marginTop: 12 }]}>
-          <Image source={{ uri: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=800' }} style={styles.promoBg} blurRadius={2} />
-          <View style={[styles.promoOverlay, { opacity: 0.75 }]} />
-          <View style={styles.promoLeft}>
-            <View style={styles.promoTagRow}><AppIcon name="coffee" size={10} color="#C4A882" /><Text style={styles.promoTagTxt}>MANUAL BREWING</Text></View>
-            <Text style={[styles.promoH, { fontSize: 20 }]}>OPEN • TODAY</Text>
-            <Text style={[styles.promoSub, { marginTop: 4 }]}>Catch you over coffee!</Text>
-            <View style={styles.p2MetaRow}><AppIcon name="phone" size={11} color="#ddd" /><Text style={styles.p2Meta}>+91 98765 43210</Text></View><View style={styles.p2MetaRow}><AppIcon name="email" size={11} color="#ddd" /><Text style={styles.p2Meta}>hello@cafespot.in</Text></View>
-          </View>
-        </View>
+        {/* New Food Promo Banner Slider */}
+        <FoodPromoBannerSlider />
 
         {/* Trending Now */}
-        <View style={styles.secHeader}><View style={styles.secTitle}><View style={styles.secBar} /><Text style={styles.secTitleTxt}>Trending Now</Text></View><TouchableOpacity style={styles.seeAllRow}><Text style={styles.seeAll}>See all</Text><AppIcon name="→" size={12} color={BROWN} /></TouchableOpacity></View>
+        <View style={styles.secHeader}>
+          <View style={styles.secTitle}><View style={styles.secBar} /><Text style={styles.secTitleTxt}>Trending Now</Text></View>
+          <TouchableOpacity 
+            style={styles.seeAllRow} 
+            onPress={() => navigation.navigate('CafeList', { title: 'Trending Now', filter: 'trending' })}
+          >
+            <Text style={styles.seeAll}>See all</Text>
+            <AppIcon name="→" size={12} color={BROWN} />
+          </TouchableOpacity>
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cafeRow}>
           {visibleTrending.map(cafe => <CafeCard key={cafe.id+'-t'} cafe={cafe} onPress={() => navigation.navigate('CafeDetail', { cafeId: cafe.id })} />)}
         </ScrollView>
@@ -582,7 +758,7 @@ export default function CafeSpotHome() {
             <View key={i} style={styles.trustItem}><AppIcon name={t.icon} size={22} color={BROWN} /><Text style={styles.trustLbl}>{t.lbl}</Text></View>
           ))}
         </View>
-        <View style={{ height: cartCount > 0 ? 170 : 90 }} />
+        <View style={{ height: cartCount > 0 ? 80 : 20 }} />
       </ScrollView>
       <Modal
         transparent
@@ -612,7 +788,11 @@ export default function CafeSpotHome() {
                 </TouchableOpacity>
               </View>
 
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetScrollContent}>
+              <ScrollView 
+                ref={sheetScrollRef}
+                showsVerticalScrollIndicator={false} 
+                contentContainerStyle={styles.sheetScrollContent}
+              >
                 <TouchableOpacity
                   style={styles.locationDetectBtn}
                   activeOpacity={0.85}
@@ -716,7 +896,7 @@ export default function CafeSpotHome() {
                   <Text style={styles.saveAddressTxt}>{editingAddressId ? 'Save changes' : 'Add address'}</Text>
                 </TouchableOpacity>
               </ScrollView>
-            </View>
+      </View>
           </KeyboardAvoidingView>
         </View>
       </Modal>
@@ -747,29 +927,36 @@ export default function CafeSpotHome() {
           <Text style={styles.floatingCartPrice}>₹{cart?.total?.toFixed(0) || '0'}</Text>
         </TouchableOpacity>
       )}
-    </SafeAreaView>
+      <TermsConsentSheet />
+      </View>
+    </ImageBackground>
   );
 }
 
 const BROWN = '#6B3F1A';
 const CREAM = '#FAF6F1';
-const CARD_BG = '#FFFFFF';
+const CARD_BG = '#FAF3E8';
 const TEXT_DARK = '#1A1A1A';
 const TEXT_MID = '#555';
 const TEXT_LIGHT = '#999';
-const CARD_W = SCREEN_WIDTH * 0.58;
+const CARD_W = 240; // Use fixed width for horizontal scrolling cards
+const SCREEN_WIDTH_CAPPED = Math.min(Dimensions.get('window').width, 430);
+const BANNER_WIDTH = SCREEN_WIDTH_CAPPED - 32;
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: CREAM },
+  container: { flex: 1, width: '100%' },
+  safe: { flex: 1 },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 20 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12 },
-  locationButton: { flex: 1, paddingRight: 12 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, position: 'relative' },
+  locationButton: { flex: 1, paddingRight: 8 },
+  logoContainer: { position: 'absolute', left: 0, right: 0, alignItems: 'center', justifyContent: 'center', zIndex: -1 },
+  logoImage: { width: 100, height: 35 },
   locRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   locDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: BROWN },
   locLabel: { fontSize: 15, fontWeight: '700', color: TEXT_DARK },
   locChev: { fontSize: 12, color: TEXT_DARK },
-  locSub: { fontSize: 11, color: TEXT_MID, marginTop: 1, marginLeft: 11 },
+  locSub: { fontSize: 10, color: TEXT_MID, marginTop: 1, marginLeft: 11, maxWidth: 120 },
   bellBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F0EBE3', justifyContent: 'center', alignItems: 'center' },
   searchBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: CARD_BG, borderRadius: 14, marginHorizontal: 16, paddingHorizontal: 14, paddingVertical: 8, marginBottom: 14, ...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6 }, android: { elevation: 2 }, web: { boxShadow: '0 2px 6px rgba(0,0,0,0.05)' } }) },
   searchLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -777,13 +964,12 @@ const styles = StyleSheet.create({
   searchIconButton: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
   searchIconButtonActive: { backgroundColor: '#F0EBE3' },
   searchPh: { fontSize: 13, color: TEXT_LIGHT },
-  catsScroll: { marginBottom: 10 },
-  catsContent: { paddingHorizontal: 12, gap: 10 },
-  catItem: { alignItems: 'center', width: 64 },
-  catCircle: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#F0EBE3', justifyContent: 'center', alignItems: 'center', marginBottom: 5 },
+  catsScroll: { marginBottom: 14 },
+  catsContent: { paddingHorizontal: 16, gap: 12 },
+  catItem: { alignItems: 'center', width: 72 },
+  catCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#F0EBE3', justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
   catCircleActive: { backgroundColor: BROWN },
-  catEmoji: { fontSize: 22 },
-  catLabel: { fontSize: 10, color: TEXT_MID, textAlign: 'center' },
+  catLabel: { fontSize: 11, color: TEXT_MID, textAlign: 'center', fontWeight: '500' },
   catLabelActive: { color: BROWN, fontWeight: '700' },
   filtersScroll: { marginBottom: 14 },
   filtersContent: { paddingHorizontal: 16, gap: 8 },
@@ -792,15 +978,16 @@ const styles = StyleSheet.create({
   fchipEmoji: { fontSize: 12 },
   fchipTxt: { fontSize: 12, color: TEXT_DARK, fontWeight: '500' },
   fchipTxtActive: { color: '#fff' },
-  promoBanner: { marginHorizontal: 16, borderRadius: 18, overflow: 'hidden', height: 160, marginBottom: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  promoBg: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
-  promoOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(35,18,5,0.68)' },
+  promoContainer: { borderRadius: 24, overflow: 'hidden', aspectRatio: 2.1, marginBottom: 6, position: 'relative' },
+  promoSlide: { height: '100%', aspectRatio: 2.1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  promoBg: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%', borderRadius: 24 },
+  promoOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(35,18,5,0.68)', borderRadius: 24 },
   promoLeft: { flex: 1, padding: 16, zIndex: 1 },
   promoTagRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
   promoTagTxt: { fontSize: 8, color: '#C4A882', letterSpacing: 1.5, textTransform: 'uppercase' },
-  promoH: { fontSize: 26, fontWeight: '900', color: '#fff', letterSpacing: 1 },
+  promoH: { fontSize: 20, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
   promoMenu: { fontSize: 13, color: '#C4A882', fontWeight: '600', marginBottom: 3 },
-  promoSub: { fontSize: 11, color: '#ddd', lineHeight: 16 },
+  promoSub: { fontSize: 13, color: '#ddd', lineHeight: 18, marginTop: 4 },
   promoBtn: { marginTop: 10, backgroundColor: '#fff', alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20 },
   promoBtnTxt: { fontSize: 11, fontWeight: '700', color: BROWN },
   promoRight: { paddingRight: 18, zIndex: 1, alignItems: 'flex-end' },
@@ -819,7 +1006,7 @@ const styles = StyleSheet.create({
   seeAllRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   cafeRow: { paddingHorizontal: 16, gap: 12, paddingBottom: 4 },
   emptySearchText: { marginHorizontal: 16, marginBottom: 4, fontSize: 12, color: TEXT_LIGHT },
-  cafeCard: { width: CARD_W, backgroundColor: CARD_BG, borderRadius: 16, overflow: 'hidden', ...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 8 }, android: { elevation: 3 }, web: { boxShadow: '0 2px 8px rgba(0,0,0,0.07)' } }) },
+  cafeCard: { width: CARD_W, backgroundColor: CARD_BG, borderRadius: 16, overflow: 'hidden', borderWidth: 2.5, borderColor: 'rgba(255, 255, 255, 0.35)', ...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 8 }, android: { elevation: 3 }, web: { boxShadow: '0 2px 8px rgba(0,0,0,0.07)' } }) },
   cafeImgWrap: { width: '100%', height: 120, position: 'relative' },
   cafeImg: { width: '100%', height: '100%' },
   heartBtn: { position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: 14, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' },
@@ -829,7 +1016,7 @@ const styles = StyleSheet.create({
   tagText: { fontSize: 10, color: '#fff', fontWeight: '600' },
   cafeBody: { padding: 10 },
   cafeNameRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  cafeName: { fontSize: 13, fontWeight: '700', color: TEXT_DARK, flex: 1 },
+  cafeName: { fontSize: 16, fontFamily: 'Fredoka_400Regular', color: TEXT_DARK, flex: 1 },
   openBadge: { backgroundColor: '#E8F5E9', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
   openText: { fontSize: 10, color: '#2E7D32', fontWeight: '600' },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginBottom: 8 },
@@ -842,7 +1029,7 @@ const styles = StyleSheet.create({
   statLbl: { fontSize: 9, color: TEXT_LIGHT, marginTop: 1 },
   divider: { height: 1, backgroundColor: '#F0EBE3', marginBottom: 8 },
   cafeBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  ctPill: { backgroundColor: '#FFF3E8', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  ctPill: { backgroundColor: '#F0EBE3', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   ctPillTxt: { fontSize: 10, color: BROWN, fontWeight: '600' },
   etaTxt: { fontSize: 10, color: TEXT_LIGHT },
   etaRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
@@ -1006,4 +1193,21 @@ const styles = StyleSheet.create({
   addressHalfInput: { flex: 1 },
   saveAddressBtn: { backgroundColor: BROWN, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 2 },
   saveAddressTxt: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  marqueeContainer: {
+    backgroundColor: BROWN,
+    paddingVertical: 6,
+    marginBottom: 14,
+    overflow: 'hidden',
+  },
+  marqueeContent: {
+    flexDirection: 'row',
+    width: '100%',
+    flex: 4,
+  },
+  marqueeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
 });

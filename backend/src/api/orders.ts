@@ -1,129 +1,450 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { getDb } from '../db';
-import { authenticate } from '../common/auth';
+import { z } from 'zod';
+import { prisma } from '../db';
+import { authenticate, DbClient } from '../common/auth';
+import { AuthenticatedRequest } from '../types/authenticated-request';
+import { audit, validate } from '../security/http';
+import { secureLogger } from '../security/logger';
+import { razorpay, razorpayKeyId, verifyRazorpayPaymentSignature } from '../payments/razorpay';
+import { sendPushToUser } from '../services/pushNotifications';
 
 const router = Router();
 
 router.use(authenticate);
 
-// GET /orders
-router.get('/', (req: Request, res: Response) => {
-  const user = (req as any).user;
-  const db = getDb();
-  const { limit = '20', offset = '0' } = req.query as any;
+const ORDER_TYPES = new Set(['DINE_IN', 'TAKEOUT', 'DELIVERY']);
+const PAYMENT_METHODS = new Set(['WALLET', 'UPI', 'CARD']);
 
-  const orders = db.prepare(`
-    SELECT o.*, c.name as cafe_name, c.image_url as cafe_image
-    FROM orders o JOIN cafes c ON o.cafe_id = c.id
-    WHERE o.user_id = ? ORDER BY o.created_at DESC LIMIT ? OFFSET ?
-  `).all(user.userId, parseInt(limit), parseInt(offset));
+const createOrderSchema = z.object({
+  cafe_id: z.string().min(1),
+  items: z.array(z.object({ menu_item_id: z.string().min(1), quantity: z.number().int().min(1).max(20) })).min(1),
+  order_type: z.enum(['DINE_IN', 'TAKEOUT', 'DELIVERY']).default('DINE_IN'),
+  special_instructions: z.string().max(500).optional(),
+  payment_method: z.enum(['WALLET', 'UPI', 'CARD']).default('WALLET'),
+  payment_details: z
+    .object({
+      razorpay_order_id: z.string().optional(),
+      razorpay_payment_id: z.string().optional(),
+      razorpay_signature: z.string().optional(),
+    })
+    .optional(),
+  reservation_id: z.string().optional(),
+});
+
+const listQuerySchema = z.object({
+  limit: z.string().regex(/^\d+$/).default('20'),
+  offset: z.string().regex(/^\d+$/).default('0'),
+});
+
+const idParamsSchema = z.object({ id: z.string().min(1) });
+const refundSchema = z.object({ amount: z.number().positive(), reason: z.string().max(200).optional() });
+const paymentIntentSchema = z.object({
+  cafe_id: z.string().min(1),
+  order_type: z.enum(['DINE_IN', 'TAKEOUT', 'DELIVERY']).default('DINE_IN'),
+});
+
+// GET /orders
+router.get('/', validate({ query: listQuerySchema }), audit('ORDER_LIST', 'order'), async (req: AuthenticatedRequest, res: Response) => {
+  const { limit, offset } = req.query as z.infer<typeof listQuerySchema>;
+
+  const rows = await prisma.order.findMany({
+    where: { user_id: req.user.userId },
+    include: {
+      cafe: { select: { name: true, image_url: true } },
+    },
+    orderBy: { created_at: 'desc' },
+    take: parseInt(limit, 10),
+    skip: parseInt(offset, 10),
+  });
+
+  const orders = rows.map(({ cafe: c, ...o }) => ({
+    ...o,
+    items: JSON.parse(o.items || '[]'),
+    cafe_name: c.name,
+    cafe_image: c.image_url,
+  }));
 
   return res.json({ success: true, data: orders });
 });
 
 // GET /orders/:id
-router.get('/:id', (req: Request, res: Response) => {
-  const user = (req as any).user;
-  const db = getDb();
-  const order = db.prepare(`
-    SELECT o.*, c.name as cafe_name, c.image_url as cafe_image, c.address as cafe_address, c.phone as cafe_phone
-    FROM orders o JOIN cafes c ON o.cafe_id = c.id
-    WHERE o.id = ? AND o.user_id = ?
-  `).get(req.params.id, user.userId) as any;
+router.get('/:id', validate({ params: idParamsSchema }), audit('ORDER_READ', 'order'), async (req: AuthenticatedRequest, res: Response) => {
+  const order = await prisma.order.findFirst({
+    where: { id: req.params.id, user_id: req.user.userId },
+    include: {
+      cafe: { select: { name: true, image_url: true, address: true, phone: true } },
+    },
+  });
 
   if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
 
-  order.items = JSON.parse(order.items || '[]');
-  return res.json({ success: true, data: order });
+  const { cafe, ...rest } = order;
+  return res.json({
+    success: true,
+    data: {
+      ...rest,
+      items: JSON.parse(order.items || '[]'),
+      cafe_name: cafe.name,
+      cafe_image: cafe.image_url,
+      cafe_address: cafe.address,
+      cafe_phone: cafe.phone,
+    },
+  });
 });
 
-// POST /orders
-router.post('/', (req: Request, res: Response) => {
-  const user = (req as any).user;
-  const { cafe_id, items, order_type = 'DINE_IN', special_instructions, payment_method = 'WALLET', reservation_id } = req.body;
-
-  if (!cafe_id || !items?.length) {
-    return res.status(400).json({ success: false, message: 'cafe_id and items are required' });
-  }
-
-  const db = getDb();
-  const cafe = db.prepare('SELECT * FROM cafes WHERE id = ?').get(cafe_id) as any;
+router.post('/payment-intent', validate({ body: paymentIntentSchema }), audit('ORDER_PAYMENT_INTENT', 'order'), async (req: AuthenticatedRequest, res: Response) => {
+  const { cafe_id, order_type } = req.body as z.infer<typeof paymentIntentSchema>;
+  const cafe = await prisma.cafe.findUnique({ where: { id: cafe_id }, select: { id: true, delivery_fee: true } });
   if (!cafe) return res.status(404).json({ success: false, message: 'Cafe not found' });
 
-  // Validate items and calculate total
-  let subtotal = 0;
-  const orderItems: any[] = [];
-
-  for (const item of items) {
-    const menuItem = db.prepare('SELECT * FROM menu_items WHERE id = ? AND cafe_id = ?').get(item.menu_item_id, cafe_id) as any;
-    if (!menuItem) return res.status(400).json({ success: false, message: `Menu item not found: ${item.menu_item_id}` });
-    const lineTotal = menuItem.price * item.quantity;
-    subtotal += lineTotal;
-    orderItems.push({ ...menuItem, quantity: item.quantity, line_total: lineTotal });
-  }
-
-  const tax = subtotal * 0.05; // 5% GST
-  const delivery_fee = order_type === 'DELIVERY' ? cafe.delivery_fee : 0;
-  const total = subtotal + tax + delivery_fee;
-
-  // Check wallet balance if paying by wallet
-  if (payment_method === 'WALLET') {
-    const dbUser = db.prepare('SELECT wallet_balance FROM users WHERE id = ?').get(user.userId) as any;
-    if (dbUser.wallet_balance < total) {
-      return res.status(400).json({ success: false, message: 'Insufficient wallet balance' });
+  const cart = await prisma.cartItem.findMany({
+    where: { user_id: req.user.userId, cafe_id },
+    include: { menu_item: { select: { price: true, stock_quantity: true, is_available: true, name: true } } },
+  });
+  if (!cart.length) return res.status(400).json({ success: false, message: 'Cart is empty' });
+  for (const item of cart) {
+    const mi = item.menu_item;
+    if (!mi.is_available || item.quantity > mi.stock_quantity) {
+      return res.status(409).json({ success: false, message: `Insufficient stock for ${mi.name}` });
     }
-    db.prepare('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ?').run(total, user.userId);
   }
 
-  const orderId = uuidv4();
-  const estimatedMinutes = cafe.prep_time_minutes || 15;
-  const estimatedAt = new Date(Date.now() + estimatedMinutes * 60000).toISOString();
+  const subtotal = cart.reduce((sum, item) => sum + item.menu_item.price * item.quantity, 0);
+  const tax = subtotal * 0.05;
+  const deliveryFee = order_type === 'DELIVERY' ? cafe.delivery_fee : 0;
+  const total = subtotal + tax + deliveryFee;
+  const order = await razorpay.orders.create({
+    amount: Math.round(total * 100),
+    currency: 'INR',
+    receipt: `order_${req.user.userId}_${Date.now()}`,
+    notes: { purpose: 'order_payment', userId: req.user.userId, cafeId: cafe_id },
+  });
 
-  db.prepare(`
-    INSERT INTO orders (id, user_id, cafe_id, reservation_id, status, order_type, items, subtotal, tax, delivery_fee, total, payment_status, payment_method, special_instructions, estimated_ready_at)
-    VALUES (?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, ?, 'PAID', ?, ?, ?)
-  `).run(orderId, user.userId, cafe_id, reservation_id || null, order_type, JSON.stringify(orderItems), subtotal, tax, delivery_fee, total, payment_method, special_instructions || null, estimatedAt);
+  return res.status(201).json({ success: true, data: { orderId: order.id, amount: order.amount, currency: order.currency, keyId: razorpayKeyId() } });
+});
 
-  // Add loyalty points (1 point per ₹10)
-  const pointsEarned = Math.floor(total / 10);
-  db.prepare('UPDATE users SET loyalty_points = loyalty_points + ? WHERE id = ?').run(pointsEarned, user.userId);
+function assertPayment(input: z.infer<typeof createOrderSchema>): string | null {
+  if (!PAYMENT_METHODS.has(input.payment_method)) return 'Please choose a valid payment method';
 
-  // Clear cart
-  db.prepare('DELETE FROM cart_items WHERE user_id = ? AND cafe_id = ?').run(user.userId, cafe_id);
+  if (input.payment_method === 'CARD') {
+    return 'Direct card payment is disabled. Use Razorpay Checkout/tokenized card processing; raw card data must never be sent to SeatSip.';
+  }
 
-  // Create notification
-  db.prepare(`INSERT INTO notifications (id, user_id, title, body, type) VALUES (?, ?, ?, ?, 'ORDER')`).run(
-    uuidv4(), user.userId,
-    '🎉 Order Confirmed!',
-    `Your order at ${cafe.name} is confirmed. Ready in ~${estimatedMinutes} mins. You earned ${pointsEarned} points!`
-  );
+  if (input.payment_method === 'UPI') {
+    const details = input.payment_details;
+    if (!details?.razorpay_order_id || !details.razorpay_payment_id || !details.razorpay_signature) {
+      return 'Verified Razorpay UPI payment is required';
+    }
+    if (!verifyRazorpayPaymentSignature(details.razorpay_order_id, details.razorpay_payment_id, details.razorpay_signature)) {
+      return 'Invalid Razorpay payment signature';
+    }
+  }
 
-  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
-  order.items = JSON.parse(order.items);
+  return null;
+}
 
-  return res.status(201).json({ success: true, data: order });
+// POST /orders
+router.post('/', validate({ body: createOrderSchema }), audit('ORDER_CREATE', 'order'), async (req: AuthenticatedRequest, res: Response) => {
+  const input = req.body as z.infer<typeof createOrderSchema>;
+  const paymentError = assertPayment(input);
+  if (paymentError) return res.status(400).json({ success: false, message: paymentError });
+  if (!ORDER_TYPES.has(input.order_type)) return res.status(400).json({ success: false, message: 'Please choose a valid order type' });
+
+  const cafe = await prisma.cafe.findUnique({ where: { id: input.cafe_id } });
+  if (!cafe) return res.status(404).json({ success: false, message: 'Cafe not found' });
+
+  try {
+    const outcome = await prisma.$transaction(async (tx) => {
+      let subtotal = 0;
+      const orderItems: Record<string, unknown>[] = [];
+
+      for (const item of input.items) {
+        const menuItem = await tx.menuItem.findFirst({
+          where: { id: item.menu_item_id, cafe_id: input.cafe_id },
+        });
+        if (!menuItem || !menuItem.is_available) throw new Error(`Menu item unavailable: ${item.menu_item_id}`);
+        if (item.quantity > menuItem.stock_quantity) throw new Error(`Insufficient stock for ${menuItem.name}`);
+        const lineTotal = menuItem.price * item.quantity;
+        subtotal += lineTotal;
+        orderItems.push({
+          id: uuidv4(),
+          menu_item_id: menuItem.id,
+          name: menuItem.name,
+          unit_price: menuItem.price,
+          quantity: item.quantity,
+          subtotal: lineTotal,
+        });
+      }
+
+      const tax = subtotal * 0.05;
+      const delivery_fee = input.order_type === 'DELIVERY' ? cafe.delivery_fee : 0;
+      const total = subtotal + tax + delivery_fee;
+      const orderId = uuidv4();
+
+      if (input.payment_method === 'WALLET') {
+        const dbUser = await tx.user.findUnique({
+          where: { id: req.user.userId },
+          select: { wallet_balance: true },
+        });
+        if (!dbUser || dbUser.wallet_balance < total) throw new Error('Insufficient wallet balance');
+        await tx.user.update({
+          where: { id: req.user.userId },
+          data: { wallet_balance: { decrement: total } },
+        });
+        const updated = await tx.user.findUnique({
+          where: { id: req.user.userId },
+          select: { wallet_balance: true },
+        });
+        await tx.walletTransaction.create({
+          data: {
+            id: uuidv4(),
+            user_id: req.user.userId,
+            type: 'DEBIT',
+            amount: total,
+            description: `Order payment at ${cafe.name}`,
+            reference_id: orderId,
+            balance_after: updated!.wallet_balance,
+          },
+        });
+      }
+
+      for (const item of input.items) {
+        const r = await tx.menuItem.updateMany({
+          where: { id: item.menu_item_id, stock_quantity: { gte: item.quantity } },
+          data: { stock_quantity: { decrement: item.quantity } },
+        });
+        if (r.count === 0) throw new Error(`Insufficient stock for item ${item.menu_item_id}`);
+      }
+
+      const estimatedMinutes = cafe.prep_time_minutes || 15;
+      const estimatedAt = new Date(Date.now() + estimatedMinutes * 60000);
+      const razorpayOrderId = input.payment_details?.razorpay_order_id || null;
+      const razorpayPaymentId = input.payment_details?.razorpay_payment_id || null;
+
+      await tx.order.create({
+        data: {
+          id: orderId,
+          user_id: req.user.userId,
+          cafe_id: input.cafe_id,
+          reservation_id: input.reservation_id || null,
+          status: 'CONFIRMED',
+          order_type: input.order_type,
+          subtotal,
+          tax,
+          delivery_fee,
+          total,
+          payment_status: 'PAID',
+          payment_method: input.payment_method,
+          razorpay_order_id: razorpayOrderId,
+          razorpay_payment_id: razorpayPaymentId,
+          special_instructions: input.special_instructions || null,
+          estimated_ready_at: estimatedAt,
+          items: JSON.stringify(orderItems),
+        },
+      });
+
+      if (input.payment_method === 'UPI') {
+        await tx.paymentEvent.create({
+          data: {
+            id: uuidv4(),
+            user_id: req.user.userId,
+            order_id: orderId,
+            event_type: 'ORDER_PAYMENT_CAPTURED',
+            payment_method: 'UPI',
+            amount: total,
+            razorpay_order_id: razorpayOrderId,
+            razorpay_payment_id: razorpayPaymentId,
+            status: 'CAPTURED',
+          },
+        });
+      }
+
+      await tx.cartItem.deleteMany({ where: { user_id: req.user.userId, cafe_id: input.cafe_id } });
+
+      const inserted = await tx.order.findUnique({
+        where: { id: orderId },
+      });
+      const pointsEarned = Math.floor(total / 10);
+      return { inserted: inserted!, pointsEarned, estimatedMinutes };
+    });
+
+    try {
+      await prisma.user.update({
+        where: { id: req.user.userId },
+        data: {
+          loyalty_points: { increment: outcome.pointsEarned },
+        },
+      });
+      await prisma.notification.create({
+        data: {
+          id: uuidv4(),
+          user_id: req.user.userId,
+          title: 'Order Confirmed',
+          body: `Your order at ${cafe.name} is confirmed. Ready in ~${outcome.estimatedMinutes} mins. You earned ${outcome.pointsEarned} points.`,
+          type: 'ORDER',
+        },
+      });
+    } catch (sideErr) {
+      secureLogger.error('post-order loyalty/notification failed', sideErr);
+    }
+
+    void sendPushToUser(req.user.userId, 'Order confirmed', `Your order at ${cafe.name} is confirmed.`, {
+      type: 'ORDER',
+      orderId: String(outcome.inserted.id),
+    });
+
+    return res.status(201).json({ success: true, data: outcome.inserted });
+  } catch (error: unknown) {
+    return res.status(409).json({ success: false, message: (error as Error).message || 'Order failed' });
+  }
+});
+
+async function refundOrder(req: AuthenticatedRequest, res: Response, orderId: string, amount: number, reason: string) {
+  const order = await prisma.order.findFirst({ where: { id: orderId, user_id: req.user.userId } });
+  if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+  if (amount <= 0 || amount > order.total) return res.status(400).json({ success: false, message: 'Invalid refund amount' });
+
+  if (order.payment_method === 'WALLET') {
+    const walletBalance = await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: req.user.userId },
+        data: { wallet_balance: { increment: amount } },
+      });
+      const updated = await tx.user.findUnique({
+        where: { id: req.user.userId },
+        select: { wallet_balance: true },
+      });
+      await tx.walletTransaction.create({
+        data: {
+          id: uuidv4(),
+          user_id: req.user.userId,
+          type: 'REFUND',
+          amount,
+          description: reason,
+          reference_id: order.id,
+          balance_after: updated!.wallet_balance,
+        },
+      });
+      return updated!.wallet_balance;
+    });
+    return res.json({ success: true, data: { wallet_balance: walletBalance } });
+  }
+
+  if (!['UPI', 'CARD'].includes(order.payment_method || '') || !order.razorpay_payment_id) {
+    return res.status(409).json({ success: false, message: 'Refund is not available for this payment' });
+  }
+
+  const refund = await razorpay.payments.refund(order.razorpay_payment_id, {
+    amount: Math.round(amount * 100),
+    notes: { orderId: order.id, reason },
+  });
+  await prisma.paymentEvent.create({
+    data: {
+      id: uuidv4(),
+      user_id: req.user.userId,
+      order_id: order.id,
+      event_type: 'REFUND_CREATED',
+      payment_method: order.payment_method || 'RAZORPAY',
+      amount,
+      razorpay_payment_id: order.razorpay_payment_id,
+      razorpay_refund_id: refund.id,
+      status: String(refund.status || 'CREATED'),
+    },
+  });
+  return res.json({ success: true, data: refund });
+}
+
+router.post('/:id/refund', validate({ params: idParamsSchema, body: refundSchema }), audit('ORDER_REFUND', 'order'), async (req: AuthenticatedRequest, res: Response) => {
+  const { amount, reason } = req.body as z.infer<typeof refundSchema>;
+  return refundOrder(req, res, req.params.id, amount, reason || 'Partial order refund');
 });
 
 // PATCH /orders/:id/cancel
-router.patch('/:id/cancel', (req: Request, res: Response) => {
-  const user = (req as any).user;
-  const db = getDb();
-
-  const order = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(req.params.id, user.userId) as any;
+router.patch('/:id/cancel', validate({ params: idParamsSchema }), audit('ORDER_CANCEL', 'order'), async (req: AuthenticatedRequest, res: Response) => {
+  const order = await prisma.order.findFirst({
+    where: { id: req.params.id, user_id: req.user.userId },
+  });
   if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
   if (!['PENDING', 'CONFIRMED'].includes(order.status)) {
     return res.status(400).json({ success: false, message: 'Order cannot be cancelled at this stage' });
   }
+ 
+  const restoreStock = async (tx: DbClient) => {
+    const items = JSON.parse(order.items || '[]') as any[];
+    for (const item of items) {
+      await tx.menuItem.updateMany({
+        where: { id: item.menu_item_id },
+        data: { stock_quantity: { increment: item.quantity } },
+      });
+    }
+  };
 
-  db.prepare("UPDATE orders SET status = 'CANCELLED', updated_at = datetime('now') WHERE id = ?").run(order.id);
-
-  // Refund if wallet payment
   if (order.payment_method === 'WALLET') {
-    db.prepare('UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?').run(order.total, user.userId);
+    try {
+      const walletBalance = await prisma.$transaction(async (tx) => {
+        await restoreStock(tx);
+        await tx.order.update({ where: { id: order.id }, data: { status: 'CANCELLED' } });
+        await tx.user.update({
+          where: { id: req.user.userId },
+          data: { wallet_balance: { increment: order.total } },
+        });
+        const updated = await tx.user.findUnique({
+          where: { id: req.user.userId },
+          select: { wallet_balance: true },
+        });
+        await tx.walletTransaction.create({
+          data: {
+            id: uuidv4(),
+            user_id: req.user.userId,
+            type: 'REFUND',
+            amount: order.total,
+            description: 'Order cancellation refund',
+            reference_id: order.id,
+            balance_after: updated!.wallet_balance,
+          },
+        });
+        return updated!.wallet_balance as number;
+      });
+      return res.json({ success: true, data: { order_id: order.id, status: 'CANCELLED', wallet_balance: walletBalance } });
+    } catch (error: unknown) {
+      return res.status(409).json({ success: false, message: (error as Error)?.message || 'Cancellation failed' });
+    }
   }
 
-  return res.json({ success: true, message: 'Order cancelled and refunded' });
+  if (['UPI', 'CARD'].includes(order.payment_method || '') && order.razorpay_payment_id) {
+    try {
+      const refund = await razorpay.payments.refund(order.razorpay_payment_id, {
+        amount: Math.round(Number(order.total) * 100),
+        notes: { orderId: order.id, reason: 'Order cancellation refund' },
+      });
+      await prisma.$transaction(async (tx) => {
+        await restoreStock(tx);
+        await tx.order.update({ where: { id: order.id }, data: { status: 'CANCELLED' } });
+        await tx.paymentEvent.create({
+          data: {
+            id: uuidv4(),
+            user_id: req.user.userId,
+            order_id: order.id,
+            event_type: 'REFUND_CREATED',
+            payment_method: order.payment_method || 'RAZORPAY',
+            amount: order.total,
+            razorpay_payment_id: order.razorpay_payment_id,
+            razorpay_refund_id: refund.id,
+            status: String(refund.status || 'CREATED'),
+          },
+        });
+      });
+      return res.json({ success: true, data: { order_id: order.id, status: 'CANCELLED', refund } });
+    } catch (error: unknown) {
+      return res.status(502).json({
+        success: false,
+        message: (error as Error)?.message || 'Refund failed; order was not cancelled. Try again or contact support.',
+      });
+    }
+  }
+
+  return res.status(409).json({ success: false, message: 'Cancellation is not available for this payment type' });
 });
 
 export default router;
