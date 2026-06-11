@@ -76,6 +76,23 @@ const resetPasswordWithOtpSchema = z.object({
     .max(128, { message: 'Password is too long' }),
 });
 
+const cafeOwnerApplicationSchema = z.object({
+  ownerName: z.string().min(2).max(100),
+  email: z.string().email().max(254).transform((email) => email.toLowerCase()),
+  phone: z.string().min(7).max(20),
+  password: z.string().min(10).max(128),
+  cafeName: z.string().min(2).max(140),
+  cafeAddress: z.string().min(5).max(300),
+  description: z.string().max(1200).optional(),
+  openingHours: z.string().max(80).optional(),
+  cafePhotos: z.array(z.string().url()).max(8).optional(),
+  governmentId: z.string().min(2).max(120),
+  businessLicense: z.string().max(120).optional(),
+  termsAccepted: z.literal(true),
+  informationAccurate: z.literal(true),
+  approvalRequired: z.literal(true),
+});
+
 /** Public user shape + `token` / `_id` for clients expecting a Mongo-style JWT payload. */
 function authSuccessPayload(user: Record<string, unknown>, accessToken: string, refreshToken?: string) {
   const u = { ...user, _id: user.id } as Record<string, unknown>;
@@ -181,6 +198,89 @@ router.post('/register', authRegisterLimiter, validate({ body: registerSchema })
 });
 
 router.post(
+  '/cafe-owner/register',
+  authRegisterLimiter,
+  validate({ body: cafeOwnerApplicationSchema }),
+  audit('CAFE_OWNER_APPLICATION', 'auth'),
+  async (req, res) => {
+    try {
+      const body = req.body as z.infer<typeof cafeOwnerApplicationSchema>;
+      const passwordError = validatePasswordStrength(body.password, [body.ownerName, body.email, body.cafeName]);
+      if (passwordError) return res.status(400).json({ success: false, message: passwordError });
+
+      const existing = await prisma.user.findUnique({ where: { email: body.email }, select: { id: true } });
+      if (existing) return res.status(409).json({ success: false, message: 'Email already registered' });
+
+      const ownerId = uuidv4();
+      const cafeId = uuidv4();
+      const passwordHash = await bcrypt.hash(body.password, 12);
+      const slug = `${body.cafeName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${cafeId.slice(0, 8)}`;
+
+      let openTime = '08:00';
+      let closeTime = '22:00';
+      if (body.openingHours) {
+        const parts = body.openingHours.split('-');
+        if (parts.length === 2) {
+          openTime = parts[0].trim();
+          closeTime = parts[1].trim();
+        }
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.user.create({
+          data: {
+            id: ownerId,
+            name: body.ownerName,
+            email: body.email,
+            phone: body.phone,
+            password_hash: passwordHash,
+            role: 'CAFE_OWNER',
+            is_active: 0,
+            auth_provider: 'owner_pending',
+          },
+        });
+
+        await tx.cafe.create({
+          data: {
+            id: cafeId,
+            name: body.cafeName,
+            slug,
+            description: body.description || null,
+            address: body.cafeAddress,
+            city: 'Mumbai',
+            phone: body.phone,
+            email: body.email,
+            image_url: body.cafePhotos?.[0] || null,
+            images: JSON.stringify(body.cafePhotos || []),
+            is_active: 0,
+            open_time: openTime,
+            close_time: closeTime,
+            tags: JSON.stringify([
+              `Government ID: ${body.governmentId}`,
+              ...(body.businessLicense ? [`Business License: ${body.businessLicense}`] : []),
+            ]),
+          },
+        });
+      });
+
+      return res.status(201).json({
+        success: true,
+        status: 'PENDING_APPROVAL',
+        message: 'Application submitted for admin approval',
+        data: { ownerId, cafeId },
+      });
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'P2002') {
+        return res.status(409).json({ success: false, message: 'Email already registered' });
+      }
+      secureLogger.error('cafe owner application failed', err);
+      return res.status(500).json({ success: false, message: 'Application submission failed' });
+    }
+  }
+);
+
+router.post(
   '/google',
   authLoginLimiter,
   validate({ body: googleSignInSchema }),
@@ -247,7 +347,7 @@ router.post(
       }
 
       await clearFailedLogin(user!.id);
-      const tokens = generateTokens({ userId: user!.id, email: user!.email, role: user!.role as 'USER' | 'ADMIN' });
+      const tokens = generateTokens({ userId: user!.id, email: user!.email, role: user!.role as 'USER' | 'ADMIN' | 'CAFE_OWNER' });
       await storeRefreshToken(prisma, user!.id, tokens.refreshToken, tokens.familyId);
 
       const { password_hash: _p, ...rest } = user!;
@@ -276,6 +376,20 @@ router.post('/login', authLoginLimiter, validate({ body: loginSchema }), audit('
     const user = await prisma.user.findFirst({ where: { email, is_active: 1 } });
 
     if (!user) {
+      const inactiveOwner = await prisma.user.findUnique({
+        where: { email },
+        select: { role: true, auth_provider: true },
+      });
+      if (inactiveOwner?.role === 'CAFE_OWNER') {
+        const status = inactiveOwner.auth_provider === 'owner_rejected' ? 'REJECTED' : 'PENDING_APPROVAL';
+        return res.status(403).json({
+          success: false,
+          status,
+          message: status === 'REJECTED'
+            ? 'Your cafe owner application was rejected.'
+            : 'Your cafe owner application is pending admin approval.',
+        });
+      }
       await recordFailedLogin(email);
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
@@ -291,7 +405,7 @@ router.post('/login', authLoginLimiter, validate({ body: loginSchema }), audit('
     }
 
     await clearFailedLogin(user.id, req.ip);
-    const tokens = generateTokens({ userId: user.id, email: user.email, role: user.role as 'USER' | 'ADMIN' });
+    const tokens = generateTokens({ userId: user.id, email: user.email, role: user.role as 'USER' | 'ADMIN' | 'CAFE_OWNER' });
     await storeRefreshToken(prisma, user.id, tokens.refreshToken, tokens.familyId);
 
     const { password_hash: _p, ...safeUser } = user;

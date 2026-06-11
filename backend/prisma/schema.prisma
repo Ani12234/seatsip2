@@ -368,3 +368,35 @@ model RedeemedReward {
   @@index([reward_id])
   @@map("redeemed_rewards")
 }
+
+model Banner {
+  id               String   @id
+  slider_type      String   @default("PROMO")  // PROMO | FOOD_PROMO | EXPLORE
+  tag              String   @default("")
+  tag_icon         String   @default("⚡")
+  tag_color        String   @default("#FFFFFF")
+  tag_bg           String   @default("rgba(255,107,0,0.2)")
+  title            String   @default("")
+  title_accent     String   @default("")
+  subtitle         String   @default("")
+  subtitle_color   String   @default("#FFBB88")
+  cta_text         String   @default("Explore now")
+  cta_bg           String   @default("#FFFFFF")
+  cta_text_color   String   @default("#000000")
+  bg_color         String   @default("#3D2010")
+  overlay_color    String   @default("rgba(30,14,4,0.5)")
+  stripe_color     String   @default("rgba(255,107,0,0.1)")
+  emoji            String   @default("☕")
+  emoji_label      String   @default("FRESH BREW")
+  emoji_label_color String  @default("#FFFFFF")
+  badge            String   @default("")
+  bg_image         String   @default("")
+  cafe_id          String?
+  is_active        Int      @default(1)
+  sort_order       Int      @default(0)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@index([is_active])
+  @@map("banners")
+}

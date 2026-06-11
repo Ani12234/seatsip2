@@ -1,6 +1,6 @@
 import { Request } from 'express';
 
-export type UserRole = 'USER' | 'ADMIN';
+export type UserRole = 'USER' | 'ADMIN' | 'CAFE_OWNER';
 
 export interface AuthUser {
   userId: string;
@@ -18,4 +18,3 @@ export interface AuthenticatedRequest<
   user: AuthUser;
   requestId?: string;
 }
-
